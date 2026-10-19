@@ -345,7 +345,16 @@ export const Route = createFileRoute("/api/chat")({
           .limit(80);
         if (histErr) return json(500, histErr.message);
 
-        // Regeneration is disabled until immutable response versions are implemented.\n        // Never overwrite an existing assistant response.\n        if (body.regenerateMessageId) {\n          return json(409, "Regeneração indisponível até a implementação segura de versões de resposta.");\n        }\n        const regenerating = false;\n        const latestMessage = history?.[0];\n        if (latestMessage?.role === "user" && latestMessage.content.trim() === text) {\n          return json(409, "Esta mensagem já foi enviada e está aguardando resposta.");\n        }\n\n        // A memória é complementar: ausência da tabela ou falha de leitura não bloqueia o chat.
+        // Never overwrite an assistant response during regeneration.
+        if (body.regenerateMessageId) {
+          return json(409, "Regeneração indisponível até a implementação segura de versões de resposta.");
+        }
+        const latestMessage = history?.[0];
+        if (latestMessage?.role === "user" && latestMessage.content.trim() === text) {
+          return json(409, "Esta mensagem já foi enviada e está aguardando resposta.");
+        }
+
+        // A memória é complementar: ausência da tabela ou falha de leitura não bloqueia o chat.
         // O campo de fundo original e as mensagens permanecem inalterados.
         let storyMemory: { summary: string; scene: string; known_facts: string; last_processed_message_id?: string | null } | null = null;
         try {
