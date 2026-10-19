@@ -373,12 +373,10 @@ export const Route = createFileRoute("/api/chat")({
           console.warn("story_memory_read_failed", error);
         }
 
-        if (!regenerating) {
-          const { error: insErr } = await supabase
-            .from("messages")
-            .insert({ character_id: character.id, user_id: userId, role: "user", content: text });
-          if (insErr) return json(500, insErr.message);
-        }
+        const { error: insErr } = await supabase
+          .from("messages")
+          .insert({ character_id: character.id, user_id: userId, role: "user", content: text });
+        if (insErr) return json(500, insErr.message);
 
         const COMMANDS: Record<string, string> = {
           advance:
