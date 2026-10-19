@@ -326,9 +326,28 @@ export const Route = createFileRoute("/api/chat")({
           provider?: AiProvider;
           personaId?: string | null;
           regenerateMessageId?: string;
+          clientMessageId?: string;
         };
         const text = body.text?.trim();
         if (!body.characterId || !text) return json(400, "Mensagem vazia.");
+        // Use the client UUID as the primary key too: the existing PK enforces
+        // idempotency even before an optional unique client_message_id index.
+        const clientMessageId = body.clientMessageId;
+        const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!clientMessageId || !uuidPattern.test(clientMessageId)) {
+          return json(400, "Identificador de envio inválido. Atualize o aplicativo.");
+        }
+        const { data: previousSend, error: previousSendError } = await supabase
+          .from("messages")
+          .select("id, character_id, role, content")
+          .eq("id", clientMessageId)
+          .eq("user_id", userId)
+          .maybeSingle();
+        if (previousSendError) return json(500, previousSendError.message);
+        if (previousSend) {
+          return json(409, "Este envio já foi registrado. Atualize o histórico antes de tentar novamente.");
+        }
+
 
         const { data: character } = await supabase
           .from("characters")
@@ -377,7 +396,19 @@ export const Route = createFileRoute("/api/chat")({
 
         const { error: insErr } = await supabase
           .from("messages")
-          .insert({ character_id: character.id, user_id: userId, role: "user", content: text });
+          .insert({
+            id: clientMessageId,
+            client_message_id: clientMessageId,
+            character_id: character.id,
+            user_id: userId,
+            role: "user",
+            content: text,
+          });
+        // A second concurrent request with the same UUID must not generate
+        // another assistant response, even if it passed the earlier lookup.
+        if (insErr?.code === "23505") {
+          return json(409, "Este envio já foi registrado. Atualize o histórico.");
+        }
         if (insErr) return json(500, insErr.message);
 
         const COMMANDS: Record<string, string> = {
