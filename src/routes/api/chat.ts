@@ -374,6 +374,11 @@ export const Route = createFileRoute("/api/chat")({
         if (body.regenerateMessageId) {
           return json(409, "Regeneração indisponível até a implementação segura de versões de resposta.");
         }
+        // Recovery is gated until an atomic database claim exists.
+        // Checking the last row alone is not concurrency-safe across tabs.
+        if (body.retryMessageId) {
+          return json(409, "Recuperação temporariamente indisponível até ativarmos a proteção contra tentativas simultâneas.");
+        }
         const latestMessage = history?.[0];
         const retrying = Boolean(body.retryMessageId);
         if (retrying) {
