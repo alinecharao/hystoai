@@ -301,36 +301,7 @@ export const Route = createFileRoute("/api/chat")({
           });
         }
 
-        if (body.role !== "user" && body.role !== "assistant") {
-          return json(400, "Tipo de mensagem inválido.");
-        }
-
-        const { data: latest, error: findError } = await supabaseAdmin
-          .from("messages")
-          .select("id")
-          .eq("character_id", body.characterId)
-          .eq("user_id", userId)
-          .eq("role", body.role)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (findError) return json(500, findError.message);
-        if (!latest?.id) return json(404, "Mensagem não encontrada no histórico salvo.");
-
-        const { data: deleted, error: deleteError } = await supabaseAdmin
-          .from("messages")
-          .delete()
-          .eq("id", latest.id)
-          .eq("user_id", userId)
-          .select("id");
-
-        if (deleteError) return json(500, deleteError.message);
-        if (!deleted?.length) return json(500, "A mensagem não foi removida do banco.");
-
-        return new Response(JSON.stringify({ ok: true, id: latest.id }), {
-          headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-        });
+        // Never infer which message to delete from its role or position.\n        // Only an explicit persisted messageId (or explicit all) is accepted.\n        return json(400, "Informe o ID exato da mensagem para excluir.");
       },
       POST: async ({ request }) => {
         const url = process.env["SUPABASE_URL"]!;
@@ -374,23 +345,7 @@ export const Route = createFileRoute("/api/chat")({
           .limit(80);
         if (histErr) return json(500, histErr.message);
 
-        const regenerateId = body.regenerateMessageId;
-        const regenerating = Boolean(regenerateId);
-        if (regenerating) {
-          const latest = history?.[0];
-          const previous = history?.[1];
-          if (!latest || latest.id !== regenerateId || latest.role !== "assistant" || previous?.role !== "user" || previous.content.trim() !== text) {
-            return json(409, "Só é possível regenerar a resposta mais recente, mantendo a mensagem original.");
-          }
-        }
-        // Do not start a second generation for the same last user message.
-        // Regeneration removes the previous persisted message before resending.
-        const latestMessage = history?.[0];
-        if (latestMessage?.role === "user" && latestMessage.content.trim() === text) {
-          return json(409, "Esta mensagem já foi enviada e está aguardando resposta. Aguarde ou use a opção de gerar novamente.");
-        }
-
-        // A memória é complementar: ausência da tabela ou falha de leitura não bloqueia o chat.
+        // Regeneration is disabled until immutable response versions are implemented.\n        // Never overwrite an existing assistant response.\n        if (body.regenerateMessageId) {\n          return json(409, "Regeneração indisponível até a implementação segura de versões de resposta.");\n        }\n        const regenerating = false;\n        const latestMessage = history?.[0];\n        if (latestMessage?.role === "user" && latestMessage.content.trim() === text) {\n          return json(409, "Esta mensagem já foi enviada e está aguardando resposta.");\n        }\n\n        // A memória é complementar: ausência da tabela ou falha de leitura não bloqueia o chat.
         // O campo de fundo original e as mensagens permanecem inalterados.
         let storyMemory: { summary: string; scene: string; known_facts: string; last_processed_message_id?: string | null } | null = null;
         try {
@@ -821,10 +776,7 @@ export const Route = createFileRoute("/api/chat")({
           onFinish: async ({ text: reply, finishReason }) => {
             const cleanedReply = removeGenerationLoops(reply);
             if (!cleanedReply || savedAssistant) return;
-            const saveQuery = regenerating
-              ? supabase.from("messages").update({ content: cleanedReply }).eq("id", regenerateId!).eq("user_id", userId).eq("character_id", character.id).eq("role", "assistant")
-              : supabase.from("messages").insert({ character_id: character.id, user_id: userId, role: "assistant", content: cleanedReply });
-            const { data: savedMessage, error } = await saveQuery.select("id").single();
+            const saveQuery = supabase.from("messages").insert({ character_id: character.id, user_id: userId, role: "assistant", content: cleanedReply });\n            const { data: savedMessage, error } = await saveQuery.select("id").single();
             if (error) {
               console.error("Falha ao salvar resposta:", {
                 message: error.message,
