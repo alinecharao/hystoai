@@ -301,7 +301,9 @@ export const Route = createFileRoute("/api/chat")({
           });
         }
 
-        // Never infer which message to delete from its role or position.\n        // Only an explicit persisted messageId (or explicit all) is accepted.\n        return json(400, "Informe o ID exato da mensagem para excluir.");
+        // Never infer which message to delete from its role or position.
+        // Only an explicit persisted messageId (or explicit all) is accepted.
+        return json(400, "Informe o ID exato da mensagem para excluir.");
       },
       POST: async ({ request }) => {
         const url = process.env["SUPABASE_URL"]!;

@@ -1,7 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { CircleUserRound } from "lucide-react";
 
-export const Route = createFileRoute("/_authenticated/profile")({ component: ProfilePage });
+export const Route = createFileRoute("/_authenticated/profile")({
+  head: () => ({ meta: [
+    { title: "Perfil — Hysto" },
+    { name: "description", content: "Informações da sua conta Hysto." },
+    { property: "og:title", content: "Perfil — Hysto" },
+    { property: "og:description", content: "Informações da sua conta Hysto." },
+    { property: "og:type", content: "website" },
+    { name: "twitter:card", content: "summary" },
+  ] }),
+  component: ProfilePage,
+});
 
 function ProfilePage() {
   const { user } = Route.useRouteContext();
