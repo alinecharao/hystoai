@@ -546,7 +546,7 @@ export const Route = createFileRoute("/api/chat")({
           ...(full.length === 0 && character.opening_scene
             ? [{ role: "assistant" as const, content: character.opening_scene }]
             : []),
-          ...recent.map((m) => ({
+          ...recent.filter((m) => !retrying || m.id !== body.retryMessageId).map((m) => ({
             role: m.role as "user" | "assistant",
             content:
               m.role === "user"
