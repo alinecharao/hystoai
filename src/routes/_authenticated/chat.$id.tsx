@@ -229,6 +229,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   );
   const regenerateIdRef = useRef<string | null>(null);
   const pendingClientMessageIdRef = useRef<string | null>(null);
+  const retryMessageIdRef = useRef<string | null>(null);
   const transport = useMemo(
     () => new DefaultChatTransport({
       api: "/api/chat",
@@ -239,16 +240,16 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
       prepareSendMessagesRequest: ({ messages, headers }) => {
         const last = messages[messages.length - 1];
         const text = (last?.parts ?? []).map((part) => (part.type === "text" ? part.text : "")).join("");
-        return { ...(headers ? { headers } : {}), body: { characterId: character.id, text, thoughts: thoughtsRef.current, provider: aiProviderRef.current, personaId: personaIdRef.current === "none" ? null : personaIdRef.current, regenerateMessageId: regenerateIdRef.current, clientMessageId: pendingClientMessageIdRef.current } };
+        return { ...(headers ? { headers } : {}), body: { characterId: character.id, text, thoughts: thoughtsRef.current, provider: aiProviderRef.current, personaId: personaIdRef.current === "none" ? null : personaIdRef.current, regenerateMessageId: regenerateIdRef.current, clientMessageId: pendingClientMessageIdRef.current, retryMessageId: retryMessageIdRef.current } };
       },
     }),
     [character.id],
   );
-  const { messages, sendMessage, status, error, setMessages, stop } = useChat({
+  const { messages, sendMessage, regenerate, status, error, setMessages, stop } = useChat({
     id: character.id,
     messages: initial,
     transport,
-    onFinish: () => { regenerateIdRef.current = null; pendingClientMessageIdRef.current = null; sendingLock.current = false; void qc.invalidateQueries({ queryKey: ["messages", character.id] }); },
+    onFinish: () => { regenerateIdRef.current = null; retryMessageIdRef.current = null; pendingClientMessageIdRef.current = null; sendingLock.current = false; void qc.invalidateQueries({ queryKey: ["messages", character.id] }); },
     onError: () => { regenerateIdRef.current = null; pendingClientMessageIdRef.current = null; sendingLock.current = false; void qc.invalidateQueries({ queryKey: ["messages", character.id] }); },
   });
 
@@ -370,9 +371,51 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   }
 
   async function retryFailedMessage() {
-    // A retry must not delete a user's saved message or silently resend it.
-    alert("A tentativa automática está temporariamente desativada para proteger suas mensagens. Atualize a conversa para conferir o histórico.");
-    await qc.invalidateQueries({ queryKey: ["messages", character.id] });
+    // Refresh the persisted history before attempting recovery. A retry is
+    // allowed only when the final stored row is a user message.
+    if (busy || sendingLock.current) return;
+    sendingLock.current = true;
+    try {
+      const { data, error: loadError } = await supabase.from("messages")
+        .select("id, role, content")
+        .eq("character_id", character.id)
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(1);
+      if (loadError) throw loadError;
+      const pending = data?.[0];
+      if (!pending || pending.role !== "user") {
+        await qc.invalidateQueries({ queryKey: ["messages", character.id] });
+        setErrorHidden(true);
+        alert("Não há mensagem pendente de resposta. O histórico foi atualizado.");
+        return;
+      }
+      const { data: history, error: historyError } = await supabase.from("messages")
+        .select("id, role, content")
+        .eq("character_id", character.id)
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true });
+      if (historyError) throw historyError;
+      // Synchronize to the database before regenerate(): no new user row is
+      // appended locally and the transport sends the existing last user text.
+      setMessages((history ?? []).map((m) => ({
+        id: m.id,
+        role: m.role as "user" | "assistant",
+        parts: [{ type: "text" as const, text: m.content }],
+      })));
+      retryMessageIdRef.current = pending.id;
+      pendingClientMessageIdRef.current = crypto.randomUUID();
+      setErrorHidden(true);
+      await regenerate();
+    } catch (retryError) {
+      retryMessageIdRef.current = null;
+      pendingClientMessageIdRef.current = null;
+      alert(retryError instanceof Error ? retryError.message : "Não foi possível recuperar a resposta.");
+    } finally {
+      sendingLock.current = false;
+    }
   }
 
   function persistedMessageId(message: UIMessage): string | null {
