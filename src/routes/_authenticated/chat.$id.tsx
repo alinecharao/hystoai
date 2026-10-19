@@ -245,7 +245,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
     }),
     [character.id],
   );
-  const { messages, sendMessage, regenerate, status, error, setMessages, stop } = useChat({
+  const { messages, sendMessage, status, error, setMessages, stop } = useChat({
     id: character.id,
     messages: initial,
     transport,
@@ -371,51 +371,12 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   }
 
   async function retryFailedMessage() {
-    // Refresh the persisted history before attempting recovery. A retry is
-    // allowed only when the final stored row is a user message.
-    if (busy || sendingLock.current) return;
-    sendingLock.current = true;
-    try {
-      const { data, error: loadError } = await supabase.from("messages")
-        .select("id, role, content")
-        .eq("character_id", character.id)
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-        .order("id", { ascending: false })
-        .limit(1);
-      if (loadError) throw loadError;
-      const pending = data?.[0];
-      if (!pending || pending.role !== "user") {
-        await qc.invalidateQueries({ queryKey: ["messages", character.id] });
-        setErrorHidden(true);
-        alert("Não há mensagem pendente de resposta. O histórico foi atualizado.");
-        return;
-      }
-      const { data: history, error: historyError } = await supabase.from("messages")
-        .select("id, role, content")
-        .eq("character_id", character.id)
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: true })
-        .order("id", { ascending: true });
-      if (historyError) throw historyError;
-      // Synchronize to the database before regenerate(): no new user row is
-      // appended locally and the transport sends the existing last user text.
-      setMessages((history ?? []).map((m) => ({
-        id: m.id,
-        role: m.role as "user" | "assistant",
-        parts: [{ type: "text" as const, text: m.content }],
-      })));
-      retryMessageIdRef.current = pending.id;
-      pendingClientMessageIdRef.current = crypto.randomUUID();
-      setErrorHidden(true);
-      await regenerate();
-    } catch (retryError) {
-      retryMessageIdRef.current = null;
-      pendingClientMessageIdRef.current = null;
-      alert(retryError instanceof Error ? retryError.message : "Não foi possível recuperar a resposta.");
-    } finally {
-      sendingLock.current = false;
-    }
+    // Do not issue a concurrent retry until the database can atomically
+    // claim a pending turn. A client-side check alone cannot prevent two
+    // browser tabs from generating and persisting duplicate assistant replies.
+    await qc.invalidateQueries({ queryKey: ["messages", character.id] });
+    setErrorHidden(true);
+    alert("A recuperação automática está aguardando a proteção contra tentativas simultâneas no banco. Sua mensagem continua salva.");
   }
 
   function persistedMessageId(message: UIMessage): string | null {
