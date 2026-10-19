@@ -228,6 +228,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
     [stored],
   );
   const regenerateIdRef = useRef<string | null>(null);
+  const pendingClientMessageIdRef = useRef<string | null>(null);
   const transport = useMemo(
     () => new DefaultChatTransport({
       api: "/api/chat",
@@ -238,7 +239,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
       prepareSendMessagesRequest: ({ messages, headers }) => {
         const last = messages[messages.length - 1];
         const text = (last?.parts ?? []).map((part) => (part.type === "text" ? part.text : "")).join("");
-        return { ...(headers ? { headers } : {}), body: { characterId: character.id, text, thoughts: thoughtsRef.current, provider: aiProviderRef.current, personaId: personaIdRef.current === "none" ? null : personaIdRef.current, regenerateMessageId: regenerateIdRef.current } };
+        return { ...(headers ? { headers } : {}), body: { characterId: character.id, text, thoughts: thoughtsRef.current, provider: aiProviderRef.current, personaId: personaIdRef.current === "none" ? null : personaIdRef.current, regenerateMessageId: regenerateIdRef.current, clientMessageId: pendingClientMessageIdRef.current } };
       },
     }),
     [character.id],
@@ -247,8 +248,8 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
     id: character.id,
     messages: initial,
     transport,
-    onFinish: () => { regenerateIdRef.current = null; sendingLock.current = false; void qc.invalidateQueries({ queryKey: ["messages", character.id] }); },
-    onError: () => { regenerateIdRef.current = null; sendingLock.current = false; void qc.invalidateQueries({ queryKey: ["messages", character.id] }); },
+    onFinish: () => { regenerateIdRef.current = null; pendingClientMessageIdRef.current = null; sendingLock.current = false; void qc.invalidateQueries({ queryKey: ["messages", character.id] }); },
+    onError: () => { regenerateIdRef.current = null; pendingClientMessageIdRef.current = null; sendingLock.current = false; void qc.invalidateQueries({ queryKey: ["messages", character.id] }); },
   });
 
   // useChat only consumes initial messages on mount. Refresh its local state
@@ -270,8 +271,10 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   const sendOnce = (text: string) => {
     if (sendingLock.current || busy || !text.trim()) return;
     sendingLock.current = true;
+    pendingClientMessageIdRef.current = crypto.randomUUID();
     void sendMessage({ text }).catch((error) => {
       sendingLock.current = false;
+      pendingClientMessageIdRef.current = null;
       console.error("chat_send_failed", error);
     });
   };
