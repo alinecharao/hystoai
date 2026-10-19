@@ -301,7 +301,9 @@ export const Route = createFileRoute("/api/chat")({
           });
         }
 
-        // Never infer which message to delete from its role or position.\n        // Only an explicit persisted messageId (or explicit all) is accepted.\n        return json(400, "Informe o ID exato da mensagem para excluir.");
+        // Never infer which message to delete from its role or position.
+        // Only an explicit persisted messageId (or explicit all) is accepted.
+        return json(400, "Informe o ID exato da mensagem para excluir.");
       },
       POST: async ({ request }) => {
         const url = process.env["SUPABASE_URL"]!;
@@ -783,7 +785,8 @@ export const Route = createFileRoute("/api/chat")({
           onFinish: async ({ text: reply, finishReason }) => {
             const cleanedReply = removeGenerationLoops(reply);
             if (!cleanedReply || savedAssistant) return;
-            const saveQuery = supabase.from("messages").insert({ character_id: character.id, user_id: userId, role: "assistant", content: cleanedReply });\n            const { data: savedMessage, error } = await saveQuery.select("id").single();
+            const saveQuery = supabase.from("messages").insert({ character_id: character.id, user_id: userId, role: "assistant", content: cleanedReply });
+            const { data: savedMessage, error } = await saveQuery.select("id").single();
             if (error) {
               console.error("Falha ao salvar resposta:", {
                 message: error.message,

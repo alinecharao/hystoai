@@ -8,7 +8,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
-export const Route = createFileRoute("/_authenticated/personas")({ component: PersonasPage });
+export const Route = createFileRoute("/_authenticated/personas")({
+  head: () => ({ meta: [
+    { title: "Personas — Hysto" },
+    { name: "description", content: "Gerencie suas personas para as histórias do Hysto." },
+    { property: "og:title", content: "Personas — Hysto" },
+    { property: "og:description", content: "Gerencie suas personas para as histórias do Hysto." },
+    { property: "og:type", content: "website" },
+    { name: "twitter:card", content: "summary" },
+  ] }),
+  component: PersonasPage,
+});
 type Persona = { id: string; name: string; description: string; photo_url: string; gender: string; age: number | null; role_description: string; likes: string; dislikes: string; boundaries: string; is_default: boolean };
 
 function PersonasPage() {
