@@ -397,7 +397,7 @@ export const Route = createFileRoute("/api/chat")({
           return m && COMMANDS[m[1]!] ? COMMANDS[m[1]!]! : content;
         };
 
-        const full = [...(history ?? [])].reverse().filter((m) => !regenerating || m.id !== regenerateId);
+        const full = [...(history ?? [])].reverse();
         // A newly started story must not inherit a saved memory checkpoint.
         // Only trust memory when its checkpoint belongs to this character\u0027s actual history.
         if (full.length === 0 || !storyMemory?.last_processed_message_id || !full.some((m) => m.id === storyMemory?.last_processed_message_id)) {
