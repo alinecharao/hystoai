@@ -327,6 +327,7 @@ export const Route = createFileRoute("/api/chat")({
           personaId?: string | null;
           regenerateMessageId?: string;
           clientMessageId?: string;
+          retryMessageId?: string;
         };
         const text = body.text?.trim();
         if (!body.characterId || !text) return json(400, "Mensagem vazia.");
@@ -346,6 +347,9 @@ export const Route = createFileRoute("/api/chat")({
         if (previousSendError) return json(500, previousSendError.message);
         if (previousSend) {
           return json(409, "Este envio já foi registrado. Atualize o histórico antes de tentar novamente.");
+        }
+        if (body.retryMessageId && !uuidPattern.test(body.retryMessageId)) {
+          return json(400, "Identificador da mensagem original inválido.");
         }
 
 
@@ -371,7 +375,15 @@ export const Route = createFileRoute("/api/chat")({
           return json(409, "Regeneração indisponível até a implementação segura de versões de resposta.");
         }
         const latestMessage = history?.[0];
-        if (latestMessage?.role === "user" && latestMessage.content.trim() === text) {
+        const retrying = Boolean(body.retryMessageId);
+        if (retrying) {
+          // Only the last persisted user turn may be recovered. Any assistant
+          // after it means the turn has already completed; never duplicate it.
+          if (!latestMessage || latestMessage.id !== body.retryMessageId ||
+              latestMessage.role !== "user" || latestMessage.content.trim() !== text) {
+            return json(409, "A mensagem não está pendente de resposta. Atualize o histórico.");
+          }
+        } else if (latestMessage?.role === "user" && latestMessage.content.trim() === text) {
           return json(409, "Esta mensagem já foi enviada e está aguardando resposta.");
         }
 
@@ -394,22 +406,24 @@ export const Route = createFileRoute("/api/chat")({
           console.warn("story_memory_read_failed", error);
         }
 
-        const { error: insErr } = await supabase
-          .from("messages")
-          .insert({
-            id: clientMessageId,
-            client_message_id: clientMessageId,
-            character_id: character.id,
-            user_id: userId,
-            role: "user",
-            content: text,
-          });
-        // A second concurrent request with the same UUID must not generate
-        // another assistant response, even if it passed the earlier lookup.
-        if (insErr?.code === "23505") {
-          return json(409, "Este envio já foi registrado. Atualize o histórico.");
+        if (!retrying) {
+          const { error: insErr } = await supabase
+            .from("messages")
+            .insert({
+              id: clientMessageId,
+              client_message_id: clientMessageId,
+              character_id: character.id,
+              user_id: userId,
+              role: "user",
+              content: text,
+            });
+          // A second concurrent request with the same UUID must not generate
+          // another assistant response, even if it passed the earlier lookup.
+          if (insErr?.code === "23505") {
+            return json(409, "Este envio já foi registrado. Atualize o histórico.");
+          }
+          if (insErr) return json(500, insErr.message);
         }
-        if (insErr) return json(500, insErr.message);
 
         const COMMANDS: Record<string, string> = {
           advance:
