@@ -75,6 +75,7 @@ export type Database = {
           content: string
           created_at: string
           id: string
+          reply_to_message_id: string | null
           role: string
           user_id: string
         }
@@ -84,6 +85,7 @@ export type Database = {
           content: string
           created_at?: string
           id?: string
+          reply_to_message_id?: string | null
           role: string
           user_id?: string
         }
@@ -93,6 +95,7 @@ export type Database = {
           content?: string
           created_at?: string
           id?: string
+          reply_to_message_id?: string | null
           role?: string
           user_id?: string
         }
@@ -102,6 +105,13 @@ export type Database = {
             columns: ["character_id"]
             isOneToOne: false
             referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_reply_to_message_id_fkey"
+            columns: ["reply_to_message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
             referencedColumns: ["id"]
           },
         ]
