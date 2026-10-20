@@ -1,5 +1,5 @@
 # Tarefas
-- [ ] Conferir e aplicar somente a migração de vínculo único de respostas; validar coluna, restrições e preservação dos dados.
+- [x] Conferir e aplicar somente a migração de vínculo único de respostas; validar coluna, restrições e preservação dos dados.
 - [x] Conferir estrutura e compatibilidade da memória existente no projeto conectado.
 - [x] Aplicar somente ajustes aditivos em story_memories e permissões próprias.
 - [x] Validar estrutura, RLS e preservação dos dados; testes transacionais revertidos, nenhuma linha de teste restante.
