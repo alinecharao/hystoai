@@ -835,8 +835,20 @@ export const Route = createFileRoute("/api/chat")({
           onFinish: async ({ text: reply, finishReason }) => {
             const cleanedReply = removeGenerationLoops(reply);
             if (!cleanedReply || savedAssistant) return;
-            const saveQuery = supabase.from("messages").insert({ character_id: character.id, user_id: userId, role: "assistant", content: cleanedReply });
+            const saveQuery = supabase.from("messages").insert({
+              character_id: character.id,
+              user_id: userId,
+              role: "assistant",
+              content: cleanedReply,
+              reply_to_message_id: retrying ? body.retryMessageId! : clientMessageId,
+            });
             const { data: savedMessage, error } = await saveQuery.select("id").single();
+            if (error?.code === "23505") {
+              // The database has already persisted a reply for this user turn.
+              savedAssistant = true;
+              console.warn("assistant_reply_already_persisted", { characterId: character.id });
+              return;
+            }
             if (error) {
               console.error("Falha ao salvar resposta:", {
                 message: error.message,
