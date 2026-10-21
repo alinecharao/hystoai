@@ -68,6 +68,38 @@ export type Database = {
         }
         Relationships: []
       }
+      chat_generation_claims: {
+        Row: {
+          character_id: string
+          claim_token: string
+          claimed_at: string
+          user_id: string
+          user_message_id: string
+        }
+        Insert: {
+          character_id: string
+          claim_token?: string
+          claimed_at?: string
+          user_id: string
+          user_message_id: string
+        }
+        Update: {
+          character_id?: string
+          claim_token?: string
+          claimed_at?: string
+          user_id?: string
+          user_message_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_generation_claims_user_message_id_fkey"
+            columns: ["user_message_id"]
+            isOneToOne: true
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           character_id: string
@@ -216,7 +248,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      claim_chat_generation: {
+        Args: { p_character_id: string; p_user_message_id: string }
+        Returns: string
+      }
+      release_chat_generation: {
+        Args: { p_claim_token: string; p_user_message_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never
