@@ -403,7 +403,12 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
       // immediately before regenerate(): React state updates are asynchronous,
       // and regenerate could otherwise target a stale or unsaved message.
       const lastVisible = messages[messages.length - 1];
-      if (lastVisible?.id !== pending.id || lastVisible.role !== "user") {
+      const visibleText = (lastVisible?.parts ?? [])
+        .filter((part) => part.type === "text")
+        .map((part) => part.text)
+        .join("");
+      if (lastVisible?.id !== pending.id || lastVisible.role !== "user" ||
+          visibleText.trim() !== pending.content.trim()) {
         setMessages((history ?? []).map((item) => ({
           id: item.id,
           role: item.role as "user" | "assistant",
