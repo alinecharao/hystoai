@@ -393,22 +393,6 @@ export const Route = createFileRoute("/api/chat")({
           return json(409, "Esta mensagem já foi enviada e está aguardando resposta.");
         }
 
-        // Atomic claim must succeed before any model work starts.
-        // Missing RPC, permissions, or a concurrent claim all fail closed.
-        let recoveryClaimToken: string | null = null;
-        if (retrying) {
-          const { data: claim, error: claimError } = await supabase.rpc("claim_chat_generation", {
-            p_user_message_id: body.retryMessageId!,
-            p_character_id: character.id,
-          });
-          if (claimError) {
-            console.error("chat_recovery_claim_failed", { code: claimError.code });
-            return json(503, "Recuperação indisponível. Nenhuma mensagem foi alterada.");
-          }
-          if (!claim) return json(409, "Esta mensagem já está em processamento ou não está mais pendente.");
-          recoveryClaimToken = claim;
-        }
-
         // A memória é complementar: ausência da tabela ou falha de leitura não bloqueia o chat.
         // O campo de fundo original e as mensagens permanecem inalterados.
         let storyMemory: { summary: string; scene: string; known_facts: string; last_processed_message_id?: string | null } | null = null;
@@ -839,6 +823,22 @@ export const Route = createFileRoute("/api/chat")({
             console.warn("story_memory_update_skipped", error instanceof Error ? error.message : String(error));
           }
         };
+
+        // Atomic claim must succeed before any model work starts.
+        // Missing RPC, permissions, or a concurrent claim all fail closed.
+        let recoveryClaimToken: string | null = null;
+        if (retrying) {
+          const { data: claim, error: claimError } = await supabase.rpc("claim_chat_generation", {
+            p_user_message_id: body.retryMessageId!,
+            p_character_id: character.id,
+          });
+          if (claimError) {
+            console.error("chat_recovery_claim_failed", { code: claimError.code });
+            return json(503, "Recuperação indisponível. Nenhuma mensagem foi alterada.");
+          }
+          if (!claim) return json(409, "Esta mensagem já está em processamento ou não está mais pendente.");
+          recoveryClaimToken = claim;
+        }
 
         let savedAssistant = false;
         const releaseRecoveryClaim = async () => {
