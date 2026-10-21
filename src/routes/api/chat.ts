@@ -389,8 +389,11 @@ export const Route = createFileRoute("/api/chat")({
               latestMessage.role !== "user" || latestMessage.content.trim() !== text) {
             return json(409, "A mensagem não está pendente de resposta. Atualize o histórico.");
           }
-        } else if (latestMessage?.role === "user" && latestMessage.content.trim() === text) {
-          return json(409, "Esta mensagem já foi enviada e está aguardando resposta.");
+        } else if (latestMessage?.role === "user") {
+          // A pending user turn must be resolved before another is appended.
+          // Otherwise the new turn would make the original unrecoverable,
+          // because claims only permit recovery of the latest user turn.
+          return json(409, "Há uma mensagem aguardando resposta. Recupere essa resposta antes de enviar outra mensagem.");
         }
 
         // A memória é complementar: ausência da tabela ou falha de leitura não bloqueia o chat.
