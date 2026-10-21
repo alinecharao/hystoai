@@ -848,11 +848,17 @@ export const Route = createFileRoute("/api/chat")({
           if (!recoveryClaimToken) return;
           const tokenToRelease = recoveryClaimToken;
           recoveryClaimToken = null;
-          const { error: releaseError } = await supabase.rpc("release_chat_generation", {
-            p_user_message_id: body.retryMessageId!,
-            p_claim_token: tokenToRelease,
-          });
-          if (releaseError) console.warn("chat_recovery_release_failed", { code: releaseError.code });
+          try {
+            const { error: releaseError } = await supabase.rpc("release_chat_generation", {
+              p_user_message_id: body.retryMessageId!,
+              p_claim_token: tokenToRelease,
+            });
+            if (releaseError) console.warn("chat_recovery_release_failed", { code: releaseError.code });
+          } catch (releaseError) {
+            // Lease expiration is the fallback if the release RPC is unreachable.
+            // A cleanup failure must not invalidate an already saved reply.
+            console.warn("chat_recovery_release_exception", releaseError);
+          }
         };
         const result = streamText({
           model: provider.chat("hysto-router"),
