@@ -250,7 +250,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
     messages: initial,
     transport,
     onFinish: () => { regenerateIdRef.current = null; retryMessageIdRef.current = null; pendingClientMessageIdRef.current = null; sendingLock.current = false; void qc.invalidateQueries({ queryKey: ["messages", character.id] }); },
-    onError: () => { regenerateIdRef.current = null; pendingClientMessageIdRef.current = null; sendingLock.current = false; void qc.invalidateQueries({ queryKey: ["messages", character.id] }); },
+    onError: () => { regenerateIdRef.current = null; retryMessageIdRef.current = null; pendingClientMessageIdRef.current = null; sendingLock.current = false; void qc.invalidateQueries({ queryKey: ["messages", character.id] }); },
   });
 
   // useChat only consumes initial messages on mount. Refresh its local state
@@ -399,13 +399,19 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
         .order("created_at", { ascending: true })
         .order("id", { ascending: true });
       if (historyError) throw historyError;
-      // Keep UI IDs equal to database IDs. The AI SDK's regenerate()
-      // reuses the last user turn instead of inserting a duplicate.
-      setMessages((history ?? []).map((item) => ({
-        id: item.id,
-        role: item.role as "user" | "assistant",
-        parts: [{ type: "text" as const, text: item.content }],
-      })));
+      // Refresh only from persisted data. Do not mutate the SDK chat state
+      // immediately before regenerate(): React state updates are asynchronous,
+      // and regenerate could otherwise target a stale or unsaved message.
+      const lastVisible = messages[messages.length - 1];
+      if (lastVisible?.id !== pending.id || lastVisible.role !== "user") {
+        setMessages((history ?? []).map((item) => ({
+          id: item.id,
+          role: item.role as "user" | "assistant",
+          parts: [{ type: "text" as const, text: item.content }],
+        })));
+        alert("O histórico foi sincronizado. Clique novamente para recuperar a resposta.");
+        return;
+      }
       retryMessageIdRef.current = pending.id;
       pendingClientMessageIdRef.current = crypto.randomUUID();
       setErrorHidden(true);
