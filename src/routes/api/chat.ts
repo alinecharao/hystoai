@@ -841,6 +841,16 @@ export const Route = createFileRoute("/api/chat")({
         };
 
         let savedAssistant = false;
+        const releaseRecoveryClaim = async () => {
+          if (!recoveryClaimToken) return;
+          const tokenToRelease = recoveryClaimToken;
+          recoveryClaimToken = null;
+          const { error: releaseError } = await supabase.rpc("release_chat_generation", {
+            p_user_message_id: body.retryMessageId!,
+            p_claim_token: tokenToRelease,
+          });
+          if (releaseError) console.warn("chat_recovery_release_failed", { code: releaseError.code });
+        };
         const result = streamText({
           model: provider.chat("hysto-router"),
           system: effectiveSystem,
@@ -851,7 +861,10 @@ export const Route = createFileRoute("/api/chat")({
           maxRetries: 0,
           onFinish: async ({ text: reply, finishReason }) => {
             const cleanedReply = removeGenerationLoops(reply);
-            if (!cleanedReply || savedAssistant) return;
+            if (!cleanedReply || savedAssistant) {
+              await releaseRecoveryClaim();
+              return;
+            }
             const saveQuery = supabase.from("messages").insert({
               character_id: character.id,
               user_id: userId,
@@ -864,6 +877,7 @@ export const Route = createFileRoute("/api/chat")({
               // The database has already persisted a reply for this user turn.
               savedAssistant = true;
               console.warn("assistant_reply_already_persisted", { characterId: character.id });
+              await releaseRecoveryClaim();
               return;
             }
             if (error) {
@@ -873,23 +887,19 @@ export const Route = createFileRoute("/api/chat")({
                 finishReason,
                 characterId: character.id,
               });
+              await releaseRecoveryClaim();
               return;
             }
             savedAssistant = true;
-            if (recoveryClaimToken) {
-              const { error: releaseError } = await supabase.rpc("release_chat_generation", {
-                p_user_message_id: body.retryMessageId!,
-                p_claim_token: recoveryClaimToken,
-              });
-              if (releaseError) console.warn("chat_recovery_release_failed", { code: releaseError.code });
-            }
+            await releaseRecoveryClaim();
             if (savedMessage?.id) {
               // Do not delay the visible reply while another model updates memory.
               void updateStoryMemory(cleanedReply, savedMessage.id).catch((error) => console.warn("story_memory_background_failed", error));
             }
           },
-          onError: (event) => {
+          onError: async (event) => {
             console.error("Falha durante o streaming do Hysto:", event.error);
+            await releaseRecoveryClaim();
           },
         });
 
