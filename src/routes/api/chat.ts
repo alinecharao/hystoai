@@ -850,16 +850,6 @@ export const Route = createFileRoute("/api/chat")({
           temperature: 0.55,
           maxRetries: 0,
           onFinish: async ({ text: reply, finishReason }) => {
-            // Recovery claims are released only after the model finishes.
-            // A crashed request leaves an expiring lease rather than allowing
-            // immediate overlapping generations.
-            if (recoveryClaimToken) {
-              const { error: releaseError } = await supabase.rpc("release_chat_generation", {
-                p_user_message_id: body.retryMessageId!,
-                p_claim_token: recoveryClaimToken,
-              });
-              if (releaseError) console.warn("chat_recovery_release_failed", { code: releaseError.code });
-            }
             const cleanedReply = removeGenerationLoops(reply);
             if (!cleanedReply || savedAssistant) return;
             const saveQuery = supabase.from("messages").insert({
@@ -886,6 +876,13 @@ export const Route = createFileRoute("/api/chat")({
               return;
             }
             savedAssistant = true;
+            if (recoveryClaimToken) {
+              const { error: releaseError } = await supabase.rpc("release_chat_generation", {
+                p_user_message_id: body.retryMessageId!,
+                p_claim_token: recoveryClaimToken,
+              });
+              if (releaseError) console.warn("chat_recovery_release_failed", { code: releaseError.code });
+            }
             if (savedMessage?.id) {
               // Do not delay the visible reply while another model updates memory.
               void updateStoryMemory(cleanedReply, savedMessage.id).catch((error) => console.warn("story_memory_background_failed", error));
