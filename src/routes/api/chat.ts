@@ -374,10 +374,11 @@ export const Route = createFileRoute("/api/chat")({
         if (body.regenerateMessageId) {
           return json(409, "Regeneração indisponível até a implementação segura de versões de resposta.");
         }
-        // Recovery is gated until an atomic database claim exists.
-        // Checking the last row alone is not concurrency-safe across tabs.
-        if (body.retryMessageId) {
-          return json(409, "Recuperação temporariamente indisponível até ativarmos a proteção contra tentativas simultâneas.");
+        // Fail closed until the Lovable Cloud migration is confirmed and
+        // HYSTO_ENABLE_CHAT_RECOVERY is explicitly enabled server-side.
+        // Never rely on a client-side switch for this permission.
+        if (body.retryMessageId && process.env["HYSTO_ENABLE_CHAT_RECOVERY"] !== "true") {
+          return json(409, "Recuperação ainda não habilitada neste ambiente.");
         }
         const latestMessage = history?.[0];
         const retrying = Boolean(body.retryMessageId);
@@ -390,6 +391,22 @@ export const Route = createFileRoute("/api/chat")({
           }
         } else if (latestMessage?.role === "user" && latestMessage.content.trim() === text) {
           return json(409, "Esta mensagem já foi enviada e está aguardando resposta.");
+        }
+
+        // Atomic claim must succeed before any model work starts.
+        // Missing RPC, permissions, or a concurrent claim all fail closed.
+        let recoveryClaimToken: string | null = null;
+        if (retrying) {
+          const { data: claim, error: claimError } = await supabase.rpc("claim_chat_generation", {
+            p_user_message_id: body.retryMessageId!,
+            p_character_id: character.id,
+          });
+          if (claimError) {
+            console.error("chat_recovery_claim_failed", { code: claimError.code });
+            return json(503, "Recuperação indisponível. Nenhuma mensagem foi alterada.");
+          }
+          if (!claim) return json(409, "Esta mensagem já está em processamento ou não está mais pendente.");
+          recoveryClaimToken = claim;
         }
 
         // A memória é complementar: ausência da tabela ou falha de leitura não bloqueia o chat.
@@ -833,6 +850,16 @@ export const Route = createFileRoute("/api/chat")({
           temperature: 0.55,
           maxRetries: 0,
           onFinish: async ({ text: reply, finishReason }) => {
+            // Recovery claims are released only after the model finishes.
+            // A crashed request leaves an expiring lease rather than allowing
+            // immediate overlapping generations.
+            if (recoveryClaimToken) {
+              const { error: releaseError } = await supabase.rpc("release_chat_generation", {
+                p_user_message_id: body.retryMessageId!,
+                p_claim_token: recoveryClaimToken,
+              });
+              if (releaseError) console.warn("chat_recovery_release_failed", { code: releaseError.code });
+            }
             const cleanedReply = removeGenerationLoops(reply);
             if (!cleanedReply || savedAssistant) return;
             const saveQuery = supabase.from("messages").insert({
