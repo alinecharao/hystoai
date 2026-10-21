@@ -6,3 +6,4 @@
 - [x] Aplicar atualização obrigatória dos pacotes e verificar erros existentes; aplicativo sem erros de compilação.
 - [x] Recuperar personagens próprios, mensagens e memória do backup na conta criada, preservando dados existentes.
 - [x] Conferir os dados recuperados e abrir as histórias na conta destinatária.
+- [x] Aplicar somente a migração de travas de geração do chat; validar tabela, funções, permissões e preservação dos dados.
