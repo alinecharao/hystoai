@@ -424,14 +424,14 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
       generationStarted = true;
       await regenerate();
     } catch (retryError) {
+      generationStarted = false;
       retryMessageIdRef.current = null;
       pendingClientMessageIdRef.current = null;
       await qc.invalidateQueries({ queryKey: ["messages", character.id] });
       alert(retryError instanceof Error ? retryError.message : "Não foi possível recuperar a resposta.");
     } finally {
       // Keep the send lock until useChat finishes or fails the generation.
-      // Releasing it immediately after regenerate() can allow a second send
-      // before the streaming status update becomes visible to React.
+      // A rejected regenerate() promise must release it here, however.
       if (!generationStarted) sendingLock.current = false;
     }
   }
