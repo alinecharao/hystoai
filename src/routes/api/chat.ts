@@ -901,7 +901,8 @@ export const Route = createFileRoute("/api/chat")({
                     finishReason,
                     characterId: character.id,
                   });
-                  return;
+                  // Keep the user turn pending and surface persistence failure.
+                  throw new Error("A resposta foi gerada, mas não pôde ser salva. Sua mensagem foi preservada.");
                 }
                 savedAssistant = true;
                 if (savedMessage?.id) {
