@@ -27,7 +27,7 @@ begin
 
   if not exists (
     select 1 from public.characters c
-    where c.id = p_character_id and c.user_id = v_user_id
+    where c.id = p_character_id and (c.user_id = v_user_id or c.user_id is null)
   ) then
     raise exception 'Character unavailable';
   end if;
