@@ -584,7 +584,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
               const index = visibleMessageStart + visibleIndex;
               const isLatestMessage = index === messages.length - 1;
               const canManageAssistant = message.role === "assistant";
-              const canGenerateFromUser = message.role === "user" && isLatestMessage && !error;
+              const canGenerateFromUser = message.role === "user" && isLatestMessage && !error && !busy && stored.some((saved) => saved.id === message.id && saved.role === "user" && saved.content.trim() === messageText(message).trim());
 
               return (
                 <div key={message.id} className="group/message">
