@@ -375,6 +375,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
     // This handler prepares a retry without appending another user message.
     if (busy || sendingLock.current) return;
     sendingLock.current = true;
+    let generationStarted = false;
     try {
       const { data: latest, error: latestError } = await supabase.from("messages")
         .select("id, role, content")
@@ -420,6 +421,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
       retryMessageIdRef.current = pending.id;
       pendingClientMessageIdRef.current = crypto.randomUUID();
       setErrorHidden(true);
+      generationStarted = true;
       await regenerate();
     } catch (retryError) {
       retryMessageIdRef.current = null;
@@ -427,7 +429,10 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
       await qc.invalidateQueries({ queryKey: ["messages", character.id] });
       alert(retryError instanceof Error ? retryError.message : "Não foi possível recuperar a resposta.");
     } finally {
-      sendingLock.current = false;
+      // Keep the send lock until useChat finishes or fails the generation.
+      // Releasing it immediately after regenerate() can allow a second send
+      // before the streaming status update becomes visible to React.
+      if (!generationStarted) sendingLock.current = false;
     }
   }
 
