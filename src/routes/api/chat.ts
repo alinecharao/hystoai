@@ -416,22 +416,36 @@ export const Route = createFileRoute("/api/chat")({
         }
 
         if (!retrying) {
-          const { error: insErr } = await supabase
-            .from("messages")
-            .insert({
-              id: clientMessageId,
-              client_message_id: clientMessageId,
-              character_id: character.id,
-              user_id: userId,
-              role: "user",
-              content: text,
+          // The atomic RPC serializes competing sends for the same conversation.
+          // Keep the legacy insert path until the additive migration is deployed.
+          // Once the migration is confirmed, enable HYSTO_ATOMIC_APPEND=true.
+          if (process.env["HYSTO_ATOMIC_APPEND"] === "true") {
+            const { data: appended, error: appendError } = await supabase.rpc("append_chat_user_message", {
+              p_message_id: clientMessageId,
+              p_character_id: character.id,
+              p_content: text,
             });
-          // A second concurrent request with the same UUID must not generate
-          // another assistant response, even if it passed the earlier lookup.
-          if (insErr?.code === "23505") {
-            return json(409, "Este envio já foi registrado. Atualize o histórico.");
+            if (appendError) {
+              console.error("chat_atomic_append_failed", { code: appendError.code });
+              return json(503, "Não foi possível registrar a mensagem. Tente novamente.");
+            }
+            if (!appended) return json(409, "Já existe uma mensagem pendente ou este envio foi registrado. Atualize o histórico.");
+          } else {
+            const { error: insErr } = await supabase
+              .from("messages")
+              .insert({
+                id: clientMessageId,
+                client_message_id: clientMessageId,
+                character_id: character.id,
+                user_id: userId,
+                role: "user",
+                content: text,
+              });
+            if (insErr?.code === "23505") {
+              return json(409, "Este envio já foi registrado. Atualize o histórico.");
+            }
+            if (insErr) return json(500, insErr.message);
           }
-          if (insErr) return json(500, insErr.message);
         }
 
         const COMMANDS: Record<string, string> = {
