@@ -377,7 +377,7 @@ export const Route = createFileRoute("/api/chat")({
         // Fail closed until the Lovable Cloud migration is confirmed and
         // HYSTO_ENABLE_CHAT_RECOVERY is explicitly enabled server-side.
         // Never rely on a client-side switch for this permission.
-        if (body.retryMessageId && process.env["HYSTO_ENABLE_CHAT_RECOVERY"] !== "true") {
+        if (body.retryMessageId && (process.env["HYSTO_ENABLE_CHAT_RECOVERY"] !== "true" || process.env["HYSTO_ATOMIC_APPEND"] !== "true")) {
           return json(409, "Recuperação ainda não habilitada neste ambiente.");
         }
         const latestMessage = history?.[0];
