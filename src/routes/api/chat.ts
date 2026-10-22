@@ -859,7 +859,9 @@ export const Route = createFileRoute("/api/chat")({
             console.warn("chat_recovery_release_exception", releaseError);
           }
         };
-        const result = streamText({
+        let result: ReturnType<typeof streamText>;
+        try {
+          result = streamText({
           model: provider.chat("hysto-router"),
           system: effectiveSystem,
           messages,
@@ -909,8 +911,14 @@ export const Route = createFileRoute("/api/chat")({
             console.error("Falha durante o streaming do Hysto:", event.error);
             await releaseRecoveryClaim();
           },
-        });
-
+          });
+        } catch (streamSetupError) {
+          // A synchronous model/stream setup failure must not hold the lease
+          // for five minutes or strand the pending user message unnecessarily.
+          await releaseRecoveryClaim();
+          console.error("chat_stream_setup_failed", streamSetupError);
+          return json(503, "Não foi possível iniciar a resposta. Sua mensagem foi preservada.");
+        }
         return result.toUIMessageStreamResponse({
           onError: (e) => {
             console.error("Erro ao converter stream para UI:", e);
