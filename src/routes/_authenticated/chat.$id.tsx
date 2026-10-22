@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
-import { Brain, ChevronLeft, Ellipsis, Info, Pencil, RotateCcw, Trash2, UserRound } from "lucide-react";
+import { Brain, ChevronLeft, Ellipsis, Info, Pencil, RotateCcw, Trash2, UserRound, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Conversation, ConversationContent, ConversationScrollButton } from "@/components/ai-elements/conversation";
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
@@ -657,8 +657,8 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
                     onClick={() => void deleteFailedMessage()}
                     className="h-8 rounded-full text-xs text-destructive hover:text-destructive"
                   >
-                    <Trash2 className="size-3.5" />
-                    Apagar mensagem
+                    <X className="size-3.5" />
+                    Dispensar aviso
                   </Button>
                 </div>
               </div>
