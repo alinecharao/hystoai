@@ -829,19 +829,18 @@ export const Route = createFileRoute("/api/chat")({
 
         // Atomic claim must succeed before any model work starts.
         // Missing RPC, permissions, or a concurrent claim all fail closed.
+        const generationUserMessageId = retrying ? body.retryMessageId! : clientMessageId;
         let recoveryClaimToken: string | null = null;
-        if (retrying) {
-          const { data: claim, error: claimError } = await supabase.rpc("claim_chat_generation", {
-            p_user_message_id: body.retryMessageId!,
-            p_character_id: character.id,
-          });
-          if (claimError) {
-            console.error("chat_recovery_claim_failed", { code: claimError.code });
-            return json(503, "Recuperação indisponível. Nenhuma mensagem foi alterada.");
-          }
-          if (!claim) return json(409, "Esta mensagem já está em processamento ou não está mais pendente.");
-          recoveryClaimToken = claim;
+        const { data: claim, error: claimError } = await supabase.rpc("claim_chat_generation", {
+          p_user_message_id: generationUserMessageId,
+          p_character_id: character.id,
+        });
+        if (claimError) {
+          console.error("chat_generation_claim_failed", { code: claimError.code });
+          return json(503, "Não foi possível iniciar a geração. Sua mensagem foi preservada.");
         }
+        if (!claim) return json(409, "Esta mensagem já está em processamento ou não está mais pendente.");
+        recoveryClaimToken = claim;
 
         let savedAssistant = false;
         const releaseRecoveryClaim = async () => {
@@ -850,7 +849,7 @@ export const Route = createFileRoute("/api/chat")({
           recoveryClaimToken = null;
           try {
             const { error: releaseError } = await supabase.rpc("release_chat_generation", {
-              p_user_message_id: body.retryMessageId!,
+              p_user_message_id: generationUserMessageId,
               p_claim_token: tokenToRelease,
             });
             if (releaseError) console.warn("chat_recovery_release_failed", { code: releaseError.code });
@@ -879,7 +878,7 @@ export const Route = createFileRoute("/api/chat")({
               user_id: userId,
               role: "assistant",
               content: cleanedReply,
-              reply_to_message_id: retrying ? body.retryMessageId! : clientMessageId,
+              reply_to_message_id: generationUserMessageId,
             });
             const { data: savedMessage, error } = await saveQuery.select("id").single();
             if (error?.code === "23505") {
