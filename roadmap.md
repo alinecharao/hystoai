@@ -7,3 +7,5 @@
 - [x] Recuperar personagens próprios, mensagens e memória do backup na conta criada, preservando dados existentes.
 - [x] Conferir os dados recuperados e abrir as histórias na conta destinatária.
 - [x] Aplicar somente a migração de travas de geração do chat; validar tabela, funções, permissões e preservação dos dados.
+- [x] Preparar e aprovar o plano de validação funcional isolada; consultar opções de ambiente separado.
+- [ ] Preparar o ambiente e executar os cenários aprovados — bloqueado: nenhum projeto Hysto de testes acessível com estrutura pronta; não foi comprovado que criar uma cópia evita executar migrações pendentes. Não usar drafts como isolamento de dados ou configurações.
