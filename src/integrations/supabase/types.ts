@@ -248,6 +248,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      append_chat_user_message: {
+        Args: { p_character_id: string; p_content: string; p_message_id: string }
+        Returns: boolean
+      }
       claim_chat_generation: {
         Args: { p_character_id: string; p_user_message_id: string }
         Returns: string
