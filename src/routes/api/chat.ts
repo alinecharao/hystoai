@@ -870,9 +870,9 @@ export const Route = createFileRoute("/api/chat")({
           temperature: 0.55,
           maxRetries: 0,
           onFinish: async ({ text: reply, finishReason }) => {
-            const cleanedReply = removeGenerationLoops(reply);
+            try {
+              const cleanedReply = removeGenerationLoops(reply);
             if (!cleanedReply || savedAssistant) {
-              await releaseRecoveryClaim();
               return;
             }
             const saveQuery = supabase.from("messages").insert({
@@ -887,7 +887,6 @@ export const Route = createFileRoute("/api/chat")({
               // The database has already persisted a reply for this user turn.
               savedAssistant = true;
               console.warn("assistant_reply_already_persisted", { characterId: character.id });
-              await releaseRecoveryClaim();
               return;
             }
             if (error) {
@@ -897,14 +896,16 @@ export const Route = createFileRoute("/api/chat")({
                 finishReason,
                 characterId: character.id,
               });
-              await releaseRecoveryClaim();
               return;
             }
             savedAssistant = true;
-            await releaseRecoveryClaim();
             if (savedMessage?.id) {
               // Do not delay the visible reply while another model updates memory.
               void updateStoryMemory(cleanedReply, savedMessage.id).catch((error) => console.warn("story_memory_background_failed", error));
+            }
+            } finally {
+              // Even if reply cleanup or persistence throws, the claim must be released.
+              await releaseRecoveryClaim();
             }
           },
           onError: async (event) => {
