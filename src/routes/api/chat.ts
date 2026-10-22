@@ -831,16 +831,21 @@ export const Route = createFileRoute("/api/chat")({
         // Missing RPC, permissions, or a concurrent claim all fail closed.
         const generationUserMessageId = retrying ? body.retryMessageId! : clientMessageId;
         let recoveryClaimToken: string | null = null;
-        const { data: claim, error: claimError } = await supabase.rpc("claim_chat_generation", {
-          p_user_message_id: generationUserMessageId,
-          p_character_id: character.id,
-        });
-        if (claimError) {
-          console.error("chat_generation_claim_failed", { code: claimError.code });
-          return json(503, "Não foi possível iniciar a geração. Sua mensagem foi preservada.");
+        try {
+          const { data: claim, error: claimError } = await supabase.rpc("claim_chat_generation", {
+            p_user_message_id: generationUserMessageId,
+            p_character_id: character.id,
+          });
+          if (claimError) {
+            console.error("chat_generation_claim_failed", { code: claimError.code });
+            return json(503, "Não foi possível iniciar a geração. Sua mensagem foi preservada.");
+          }
+          if (!claim) return json(409, "Esta mensagem já está em processamento ou não está mais pendente.");
+          recoveryClaimToken = claim;
+        } catch (claimException) {
+          console.error("chat_generation_claim_exception", claimException);
+          return json(503, "Não foi possível verificar a geração. Sua mensagem foi preservada.");
         }
-        if (!claim) return json(409, "Esta mensagem já está em processamento ou não está mais pendente.");
-        recoveryClaimToken = claim;
 
         let savedAssistant = false;
         const releaseRecoveryClaim = async () => {
