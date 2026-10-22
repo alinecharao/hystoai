@@ -872,37 +872,37 @@ export const Route = createFileRoute("/api/chat")({
           onFinish: async ({ text: reply, finishReason }) => {
             try {
               const cleanedReply = removeGenerationLoops(reply);
-            if (!cleanedReply || savedAssistant) {
-              return;
-            }
-            const saveQuery = supabase.from("messages").insert({
-              character_id: character.id,
-              user_id: userId,
-              role: "assistant",
-              content: cleanedReply,
-              reply_to_message_id: generationUserMessageId,
-            });
-            const { data: savedMessage, error } = await saveQuery.select("id").single();
-            if (error?.code === "23505") {
-              // The database has already persisted a reply for this user turn.
-              savedAssistant = true;
-              console.warn("assistant_reply_already_persisted", { characterId: character.id });
-              return;
-            }
-            if (error) {
-              console.error("Falha ao salvar resposta:", {
-                message: error.message,
-                code: error.code,
-                finishReason,
-                characterId: character.id,
+              if (!cleanedReply || savedAssistant) {
+                return;
+              }
+              const saveQuery = supabase.from("messages").insert({
+                character_id: character.id,
+                user_id: userId,
+                role: "assistant",
+                content: cleanedReply,
+                reply_to_message_id: generationUserMessageId,
               });
-              return;
-            }
-            savedAssistant = true;
-            if (savedMessage?.id) {
-              // Do not delay the visible reply while another model updates memory.
-              void updateStoryMemory(cleanedReply, savedMessage.id).catch((error) => console.warn("story_memory_background_failed", error));
-            }
+              const { data: savedMessage, error } = await saveQuery.select("id").single();
+              if (error?.code === "23505") {
+                // The database has already persisted a reply for this user turn.
+                savedAssistant = true;
+                console.warn("assistant_reply_already_persisted", { characterId: character.id });
+                return;
+              }
+              if (error) {
+                console.error("Falha ao salvar resposta:", {
+                  message: error.message,
+                  code: error.code,
+                  finishReason,
+                  characterId: character.id,
+                });
+                return;
+              }
+              savedAssistant = true;
+              if (savedMessage?.id) {
+                // Do not delay the visible reply while another model updates memory.
+                void updateStoryMemory(cleanedReply, savedMessage.id).catch((error) => console.warn("story_memory_background_failed", error));
+              }
             } finally {
               // Even if reply cleanup or persistence throws, the claim must be released.
               await releaseRecoveryClaim();
