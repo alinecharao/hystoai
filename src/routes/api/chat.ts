@@ -919,12 +919,20 @@ export const Route = createFileRoute("/api/chat")({
           console.error("chat_stream_setup_failed", streamSetupError);
           return json(503, "Não foi possível iniciar a resposta. Sua mensagem foi preservada.");
         }
-        return result.toUIMessageStreamResponse({
-          onError: (e) => {
-            console.error("Erro ao converter stream para UI:", e);
-            return e instanceof Error ? e.message : "Erro ao gerar resposta.";
-          },
-        });
+        try {
+          return result.toUIMessageStreamResponse({
+            onError: (e) => {
+              console.error("Erro ao converter stream para UI:", e);
+              return e instanceof Error ? e.message : "Erro ao gerar resposta.";
+            },
+          });
+        } catch (responseError) {
+          // Stream response construction may fail before onError is registered.
+          // Do not leave the pending turn locked until lease expiration.
+          await releaseRecoveryClaim();
+          console.error("chat_stream_response_failed", responseError);
+          return json(503, "Não foi possível iniciar a resposta. Sua mensagem foi preservada.");
+        }
       },
     },
   },
