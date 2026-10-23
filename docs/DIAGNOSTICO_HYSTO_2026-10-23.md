@@ -13,6 +13,7 @@
 | P1 | Persona | Upload acontecia antes de validar idade; falha após desmarcar persona padrão podia perder a seleção anterior | Corrigido: validação prévia, tratamento de exceções, rollback de melhor esforço da seleção anterior, limpeza de upload ao falhar |
 | P2 | Personagem | Upload aceitava extensão do nome enviado e podia deixar imagem órfã caso falhasse assinatura; formulário podia continuar bloqueado | Corrigido: MIME/tamanho validados, extensão derivada de MIME, limpeza e `finally` |
 | P1 | Qualidade CI | Workflow compilava mas não executava testes existentes | Adicionado `bunx vitest run` e testes de narração/pensamentos/comandos |
+| P1 | Erros de IA | Erros brutos de provedores podiam ser exibidos com IDs da organização e detalhes internos | Tratamento de streaming agora mostra instruções úteis de cota/créditos sem revelar dados brutos |
 | P2 | Permissões | Migração inicial `messages` permite `INSERT` de `role=assistant` pelo próprio usuário via cliente autenticado; integridade do fluxo depende também da API | **Pendente de reforço arquitetural**: migração de permissões e escrita de respostas pelo servidor exigem planejamento/teste em ambiente isolado |
 | P2 | Credenciais | `.env` existe no histórico Git com nomes de variáveis de projeto e chave publicável | Chave *publishable* não é segredo privilegiado, mas convém remover o arquivo rastreado e revisar histórico por segredos. Não reproduzir valores em relatórios |
 | P2 | Memória/background | A geração de resumos é iniciada de forma assíncrona após salvar a resposta. No servidor, tarefas pós-resposta podem ser interrompidas dependendo do runtime | **Pendente de observação** em logs reais; o chat não depende desse resumo para persistir a resposta |
@@ -32,7 +33,8 @@
 ## Validações já realizadas
 
 - Testes manuais comunicados pela usuária: envio normal, atualização forçada, recuperação de mensagem pendente e gerações alternativas (incluindo seleção, persistência e continuidade) funcionaram no Preview.
-- CI da branch de auditoria: instalação, TypeScript, Vitest e build aprovados no GitHub Actions após as correções iniciais.
+- Novos testes unitários cobrem delimitação de pensamentos, comandos e validação estrita de pedidos DELETE (inclusive o valor perigoso `"false"`).
+- CI da branch de auditoria: instalação, TypeScript, Vitest e build aprovados no GitHub Actions. O pipeline usa Ubuntu 24.04 fixo e `actions/checkout@v5` para reduzir mudanças inesperadas do runner.
 - Compilação **não** comprova integridade de produção, políticas RLS efetivas, concorrência de múltiplos dispositivos, custos ou indisponibilidade de provedores.
 
 ## Consultas somente de leitura para validar RLS e integridade no Lovable
