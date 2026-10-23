@@ -245,7 +245,22 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
         .order("id", { ascending: true })
         .range(start, start + 30);
       if (error) throw error;
-      setHistoryRows((data ?? []).slice(0, 30));
+      let pageRows = (data ?? []).slice(0, 30);
+      if (responseVersionsEnabled) {
+        const assistantIds = pageRows.filter((item) => item.role === "assistant").map((item) => item.id);
+        if (assistantIds.length > 0) {
+          const { data: selected, error: selectionError } = await supabase.from("assistant_response_versions")
+            .select("assistant_message_id, content")
+            .eq("character_id", character.id)
+            .eq("user_id", user.id)
+            .eq("is_selected", true)
+            .in("assistant_message_id", assistantIds);
+          if (selectionError) throw selectionError;
+          const selectedById = new Map((selected ?? []).map((item) => [item.assistant_message_id, item.content]));
+          pageRows = pageRows.map((item) => ({ ...item, content: selectedById.get(item.id) ?? item.content }));
+        }
+      }
+      setHistoryRows(pageRows);
       setHistoryHasMore((data ?? []).length > 30);
       setHistoryPage(page);
     } catch (error) {
