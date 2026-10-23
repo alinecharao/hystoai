@@ -10,6 +10,8 @@ create table if not exists public.assistant_response_versions (
   is_selected boolean not null default false,
   created_at timestamptz not null default now()
 );
+alter table public.assistant_response_versions
+  add column if not exists is_selected boolean not null default false;
 create index if not exists assistant_response_versions_message_created_idx
   on public.assistant_response_versions (assistant_message_id, created_at, id);
 create unique index if not exists assistant_response_versions_one_selected_idx
