@@ -68,6 +68,76 @@ export type Database = {
         }
         Relationships: []
       }
+      assistant_response_versions: {
+        Row: {
+          id: string
+          assistant_message_id: string
+          user_id: string
+          character_id: string
+          content: string
+          is_selected: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          assistant_message_id: string
+          user_id: string
+          character_id: string
+          content: string
+          is_selected?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          assistant_message_id?: string
+          user_id?: string
+          character_id?: string
+          content?: string
+          is_selected?: boolean
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assistant_response_versions_assistant_message_id_fkey"
+            columns: ["assistant_message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      assistant_regeneration_claims: {
+        Row: {
+          assistant_message_id: string
+          user_id: string
+          character_id: string
+          claim_token: string
+          claimed_at: string
+        }
+        Insert: {
+          assistant_message_id: string
+          user_id: string
+          character_id: string
+          claim_token?: string
+          claimed_at?: string
+        }
+        Update: {
+          assistant_message_id?: string
+          user_id?: string
+          character_id?: string
+          claim_token?: string
+          claimed_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assistant_regeneration_claims_assistant_message_id_fkey"
+            columns: ["assistant_message_id"]
+            isOneToOne: true
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       chat_generation_claims: {
         Row: {
           character_id: string
@@ -248,6 +318,22 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      claim_assistant_regeneration: {
+        Args: { p_assistant_message_id: string; p_character_id: string }
+        Returns: string | null
+      }
+      release_assistant_regeneration: {
+        Args: { p_assistant_message_id: string; p_claim_token: string }
+        Returns: boolean
+      }
+      finish_assistant_regeneration: {
+        Args: { p_assistant_message_id: string; p_claim_token: string; p_content: string }
+        Returns: string | null
+      }
+      select_assistant_response_version: {
+        Args: { p_assistant_message_id: string; p_version_id: string | null }
+        Returns: boolean
+      }
       append_chat_user_message: {
         Args: { p_character_id: string; p_content: string; p_message_id: string }
         Returns: boolean
