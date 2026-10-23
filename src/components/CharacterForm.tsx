@@ -56,21 +56,31 @@ export function CharacterForm({
   }
 
   async function uploadPhoto(file: File) {
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 5 * 1024 * 1024) {
+      setError("Escolha uma imagem JPG, PNG ou WebP com até 5 MB.");
+      return;
+    }
     setUploading(true);
     setError(null);
+    let uploadedPath: string | null = null;
     try {
-      const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
+      const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
       const path = `${userId}/${crypto.randomUUID()}.${ext}`;
       const { error: upErr } = await supabase.storage
         .from("character-photos")
-        .upload(path, file, { upsert: true, contentType: file.type });
+        .upload(path, file, { upsert: false, contentType: file.type });
       if (upErr) throw upErr;
+      uploadedPath = path;
       const { data, error: signErr } = await supabase.storage
         .from("character-photos")
         .createSignedUrl(path, 60 * 60 * 24 * 365 * 10);
       if (signErr) throw signErr;
       setV((prev) => ({ ...prev, image_url: data.signedUrl }));
     } catch (err) {
+      if (uploadedPath) {
+        try { await supabase.storage.from("character-photos").remove([uploadedPath]); }
+        catch (cleanupError) { console.warn("character_photo_cleanup_failed", cleanupError); }
+      }
       setError(err instanceof Error ? err.message : "Não foi possível enviar a foto.");
     } finally {
       setUploading(false);
@@ -82,6 +92,7 @@ export function CharacterForm({
       className="space-y-7"
       onSubmit={async (e) => {
         e.preventDefault();
+        if (busy || uploading) return;
         if (!v.name.trim()) return setError("Dê um nome ao personagem.");
         setBusy(true);
         setError(null);
@@ -89,6 +100,7 @@ export function CharacterForm({
           await onSubmit(v);
         } catch (err) {
           setError(err instanceof Error ? err.message : "Erro ao salvar.");
+        } finally {
           setBusy(false);
         }
       }}
@@ -249,7 +261,7 @@ export function CharacterForm({
       {error && <p className="text-sm text-destructive">{error}</p>}
       <div className="flex items-center justify-between">
         <button
-          disabled={busy}
+          disabled={busy || uploading}
           className="rounded-full bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-50"
         >
           {busy ? "Salvando..." : submitLabel}
