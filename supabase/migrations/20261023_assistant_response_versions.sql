@@ -41,6 +41,8 @@ create table if not exists public.assistant_regeneration_claims (
   claim_token uuid not null default gen_random_uuid(),
   claimed_at timestamptz not null default now()
 );
+create index if not exists assistant_regeneration_claims_conversation_idx
+  on public.assistant_regeneration_claims (user_id, character_id, claimed_at);
 alter table public.assistant_regeneration_claims enable row level security;
 revoke all on public.assistant_regeneration_claims from public, anon, authenticated;
 
@@ -191,3 +193,6 @@ grant execute on function public.finish_assistant_regeneration(uuid, uuid, text)
 grant execute on function public.select_assistant_response_version(uuid, uuid) to authenticated;
 revoke all on function public.append_chat_user_message(uuid, uuid, text) from public, anon;
 grant execute on function public.append_chat_user_message(uuid, uuid, text) to authenticated;
+
+-- Ensure the REST API discovers the new RPC signatures after a manual SQL Editor run.
+notify pgrst, 'reload schema';
