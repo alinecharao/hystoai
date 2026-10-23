@@ -845,7 +845,9 @@ export const Route = createFileRoute("/api/chat")({
         // Atualização periódica e não crítica: a conversa é sempre salva primeiro.
         // Falhas, limites e respostas inválidas da memória nunca falham o chat.
         const updateStoryMemory = async (assistantReply: string, assistantMessageId: string) => {
-          const completeHistory = [...full, { role: "user", content: text }, { role: "assistant", content: assistantReply }];
+          // Recovery reuses an existing pending user turn: include it once.
+          const historicalTurns = retrying ? full.filter((item) => item.id !== body.retryMessageId) : full;
+          const completeHistory = [...historicalTurns, { role: "user", content: text }, { role: "assistant", content: assistantReply }];
           // Atualizar a cada 8 turnos, priorizando o contexto mais recente.
           // A atualização é baseada no contexto recente + resumo anterior, sem reescrever o fundo.
           const assistantCount = completeHistory.filter((m) => m.role === "assistant").length;
