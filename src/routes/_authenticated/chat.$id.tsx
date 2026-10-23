@@ -747,6 +747,18 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
               const selectedVersion = versions.find((item) => item.is_selected);
               const shownText = selectedVersion?.content ?? messageText(message);
               const selectedIndex = selectedVersion ? versions.findIndex((item) => item.id === selectedVersion.id) + 1 : 0;
+              const newestSaved = stored[stored.length - 1];
+              const precedingSaved = stored[stored.length - 2];
+              const canGenerateNewVersion =
+                responseVersionsEnabled &&
+                newestSaved?.id === message.id &&
+                precedingSaved?.role === "user" &&
+                newestSaved.reply_to_message_id === precedingSaved.id;
+              const unavailableReason = !responseVersionsEnabled
+                ? "A funcionalidade ainda não está ativa nesta prévia."
+                : !newestSaved || newestSaved.id !== message.id
+                  ? "Aguarde a sincronização da última resposta."
+                  : "Esta resposta não tem um vínculo de geração confirmado. Gere uma nova resposta em uma conversa de teste.";
               const canGenerateFromUser =
                 message.role === "user" &&
                 isLatestMessage &&
@@ -784,20 +796,28 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
                               Ver {versions.length + 1} versões
                             </Button>
                       )}
-                      {canManageAssistant && isLatestMessage && responseVersionsEnabled &&
-                       stored[stored.length - 1]?.id === message.id &&
-                       stored[stored.length - 1]?.reply_to_message_id === stored[stored.length - 2]?.id &&
-                       <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        disabled={busy || versionChanging}
-                        onClick={() => void regenerateAssistantMessage(message, index)}
-                        className="h-8 rounded-full px-2.5 text-xs text-muted-foreground opacity-100 transition hover:text-foreground sm:opacity-0 sm:group-hover/message:opacity-100"
-                      >
-                        <RotateCcw className="size-3.5" />
-                        Gerar nova resposta
-                      </Button>}
+                      {canManageAssistant && isLatestMessage && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                disabled={busy || versionChanging || !canGenerateNewVersion}
+                                onClick={() => void regenerateAssistantMessage(message, index)}
+                                className="h-8 rounded-full px-2.5 text-xs text-muted-foreground opacity-100 transition hover:text-foreground sm:opacity-0 sm:group-hover/message:opacity-100"
+                              >
+                                <RotateCcw className="size-3.5" />
+                                Gerar nova resposta
+                              </Button>
+                            </span>
+                          </TooltipTrigger>
+                          {!canGenerateNewVersion && (
+                            <TooltipContent>{unavailableReason}</TooltipContent>
+                          )}
+                        </Tooltip>
+                      )}
                       <Button
                         type="button"
                         variant="ghost"
