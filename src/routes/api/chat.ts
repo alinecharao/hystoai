@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateText, streamText, type ModelMessage } from "ai";
 import type { Database } from "@/integrations/supabase/types";
+import { parseChatDeletion } from "@/lib/chat-validation";
 
 // Remove only obvious consecutive loops; preserve ordinary literary repetition.
 function removeGenerationLoops(value: string): string {
@@ -284,32 +285,19 @@ export const Route = createFileRoute("/api/chat")({
         if (authErr || !claims?.claims?.sub) return json(401, "Sessão inválida.");
         const userId = claims.claims.sub;
 
-        // A malformed payload must never trigger a destructive request.
         const rawDeleteBody: unknown = await request.json().catch(() => null);
-        if (!rawDeleteBody || typeof rawDeleteBody !== "object" || Array.isArray(rawDeleteBody)) {
-          return json(400, "Solicitação de exclusão inválida.");
-        }
-        const body = rawDeleteBody as {
-          characterId?: unknown;
-          all?: unknown;
-          messageId?: unknown;
-        };
-
-        const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        if (typeof body.characterId !== "string" || !uuidPattern.test(body.characterId)) {
-          return json(400, "Personagem inválido.");
-        }
-        if (body.all === true && body.messageId !== undefined) {
-          return json(400, "Escolha excluir a conversa ou uma mensagem, nunca ambos.");
+        const deletion = parseChatDeletion(rawDeleteBody);
+        if (!deletion) {
+          return json(400, "Exclusão inválida. Informe um ID exato de mensagem ou confirme a exclusão de toda a conversa.");
         }
 
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-        if (body.all === true) {
+        if (deletion.type === "conversation") {
           const { error } = await supabaseAdmin
             .from("messages")
             .delete()
-            .eq("character_id", body.characterId)
+            .eq("character_id", deletion.characterId)
             .eq("user_id", userId);
 
           if (error) return json(500, error.message);
@@ -318,17 +306,17 @@ export const Route = createFileRoute("/api/chat")({
           });
         }
 
-        if (typeof body.messageId === "string" && uuidPattern.test(body.messageId)) {
+        if (deletion.type === "message") {
           const { data: deleted, error: deleteError } = await supabaseAdmin
             .from("messages")
             .delete()
-            .eq("id", body.messageId)
-            .eq("character_id", body.characterId)
+            .eq("id", deletion.messageId)
+            .eq("character_id", deletion.characterId)
             .eq("user_id", userId)
             .select("id");
           if (deleteError) return json(500, deleteError.message);
           if (!deleted?.length) return json(404, "Resposta não encontrada ou já excluída.");
-          return new Response(JSON.stringify({ ok: true, id: body.messageId }), {
+          return new Response(JSON.stringify({ ok: true, id: deletion.messageId }), {
             headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
           });
         }
