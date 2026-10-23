@@ -268,18 +268,28 @@ export const Route = createFileRoute("/api/chat")({
         if (authErr || !claims?.claims?.sub) return json(401, "Sessão inválida.");
         const userId = claims.claims.sub;
 
-        const body = (await request.json()) as {
-          characterId?: string;
-          role?: "user" | "assistant";
-          all?: boolean;
-          messageId?: string;
+        // A malformed payload must never trigger a destructive request.
+        const rawDeleteBody: unknown = await request.json().catch(() => null);
+        if (!rawDeleteBody || typeof rawDeleteBody !== "object" || Array.isArray(rawDeleteBody)) {
+          return json(400, "Solicitação de exclusão inválida.");
+        }
+        const body = rawDeleteBody as {
+          characterId?: unknown;
+          all?: unknown;
+          messageId?: unknown;
         };
 
-        if (!body.characterId) return json(400, "Personagem não informado.");
+        const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (typeof body.characterId !== "string" || !uuidPattern.test(body.characterId)) {
+          return json(400, "Personagem inválido.");
+        }
+        if (body.all === true && body.messageId !== undefined) {
+          return json(400, "Escolha excluir a conversa ou uma mensagem, nunca ambos.");
+        }
 
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-        if (body.all) {
+        if (body.all === true) {
           const { error } = await supabaseAdmin
             .from("messages")
             .delete()
@@ -292,7 +302,7 @@ export const Route = createFileRoute("/api/chat")({
           });
         }
 
-        if (body.messageId) {
+        if (typeof body.messageId === "string" && uuidPattern.test(body.messageId)) {
           const { data: deleted, error: deleteError } = await supabaseAdmin
             .from("messages")
             .delete()
@@ -325,9 +335,13 @@ export const Route = createFileRoute("/api/chat")({
         if (authErr || !claims?.claims?.sub) return json(401, "Sessão inválida.");
         const userId = claims.claims.sub;
 
-        const body = (await request.json()) as {
-          characterId?: string;
-          text?: string;
+        const rawChatBody: unknown = await request.json().catch(() => null);
+        if (!rawChatBody || typeof rawChatBody !== "object" || Array.isArray(rawChatBody)) {
+          return json(400, "Solicitação de mensagem inválida.");
+        }
+        const body = rawChatBody as {
+          characterId?: unknown;
+          text?: unknown;
           thoughts?: boolean;
           provider?: AiProvider;
           personaId?: string | null;
@@ -335,13 +349,19 @@ export const Route = createFileRoute("/api/chat")({
           clientMessageId?: string;
           retryMessageId?: string;
         };
-        const text = body.text?.trim();
-        if (!body.characterId || !text) return json(400, "Mensagem vazia.");
+        const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const text = typeof body.text === "string" ? body.text.trim() : "";
+        if (!text) return json(400, "Mensagem vazia.");
+        if (text.length > 50000) {
+          return json(413, "Esta mensagem é muito longa. Divida o texto em partes menores antes de enviar.");
+        }
+        if (typeof body.characterId !== "string" || !uuidPattern.test(body.characterId)) {
+          return json(400, "Identificador do personagem inválido.");
+        }
         // Use the client UUID as the primary key too: the existing PK enforces
         // idempotency even before an optional unique client_message_id index.
         const clientMessageId = body.clientMessageId;
-        const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        if (!clientMessageId || !uuidPattern.test(clientMessageId)) {
+        if (typeof clientMessageId !== "string" || !uuidPattern.test(clientMessageId)) {
           return json(400, "Identificador de envio inválido. Atualize o aplicativo.");
         }
         const { data: previousSend, error: previousSendError } = await supabase
@@ -354,10 +374,10 @@ export const Route = createFileRoute("/api/chat")({
         if (previousSend) {
           return json(409, "Este envio já foi registrado. Atualize o histórico antes de tentar novamente.");
         }
-        if (body.retryMessageId && !uuidPattern.test(body.retryMessageId)) {
+        if (body.retryMessageId !== undefined && (typeof body.retryMessageId !== "string" || !uuidPattern.test(body.retryMessageId))) {
           return json(400, "Identificador da mensagem original inválido.");
         }
-        if (body.regenerateMessageId && !uuidPattern.test(body.regenerateMessageId)) {
+        if (body.regenerateMessageId !== undefined && (typeof body.regenerateMessageId !== "string" || !uuidPattern.test(body.regenerateMessageId))) {
           return json(400, "Identificador da resposta inválido.");
         }
         const regenerating = Boolean(body.regenerateMessageId);
