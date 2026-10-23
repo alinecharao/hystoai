@@ -106,10 +106,15 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
     queryKey: ["response-versions", character.id],
     enabled: responseVersionsEnabled,
     queryFn: async (): Promise<AssistantVersion[]> => {
+      // Read only alternatives for messages in the current chat window.
+      // Avoid transferring every long-form reply of an old story on mobile.
+      const assistantIds = stored.filter((item) => item.role === "assistant").map((item) => item.id);
+      if (!assistantIds.length) return [];
       const { data, error } = await supabase.from("assistant_response_versions")
         .select("id, assistant_message_id, content, is_selected, created_at")
         .eq("character_id", character.id)
         .eq("user_id", user.id)
+        .in("assistant_message_id", assistantIds)
         .order("created_at", { ascending: true })
         .order("id", { ascending: true });
       if (error) throw error;
@@ -265,7 +270,11 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
         return data.session ? { Authorization: `Bearer ${data.session.access_token}` } : {};
       },
       prepareSendMessagesRequest: ({ messages, headers }) => {
-        const last = messages[messages.length - 1];
+        // SDK regeneration may still expose the previous assistant while
+        // preparing its request. Always send the real preceding user turn.
+        const last = regenerateIdRef.current
+          ? [...messages].reverse().find((item) => item.role === "user")
+          : messages[messages.length - 1];
         const text = (last?.parts ?? []).map((part) => (part.type === "text" ? part.text : "")).join("");
         return { ...(headers ? { headers } : {}), body: { characterId: character.id, text, thoughts: thoughtsRef.current, provider: aiProviderRef.current, personaId: personaIdRef.current === "none" ? null : personaIdRef.current, regenerateMessageId: regenerateIdRef.current, clientMessageId: pendingClientMessageIdRef.current, retryMessageId: retryMessageIdRef.current } };
       },
@@ -321,7 +330,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
 
   const busy = status === "submitted" || status === "streaming";
   const sendOnce = (text: string) => {
-    if (sendingLock.current || busy || !text.trim()) return;
+    if (sendingLock.current || busy || versionChanging || !text.trim()) return;
     sendingLock.current = true;
     pendingClientMessageIdRef.current = crypto.randomUUID();
     void sendMessage({ text }).catch((error) => {
@@ -726,7 +735,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
                 <div key={message.id} className="group/message">
                   <Bubble role={message.role} character={character} showThoughts={showThoughts} text={shownText} />
                   {(
-                    <div className={`mt-1 flex items-center gap-1 px-1 ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+                    <div className={`mt-1 flex flex-wrap items-center gap-1 px-1 ${message.role === "user" ? "justify-end" : "justify-start"}`}>
                       {canManageAssistant && versions.length > 0 && (
                         isLatestMessage && stored[stored.length - 1]?.id === message.id
                           ? <div className="flex items-center gap-1 text-xs text-muted-foreground">
