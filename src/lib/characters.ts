@@ -90,7 +90,7 @@ export const messagesQuery = (characterId: string) =>
     queryFn: async () => {
       const { data, error } = await supabase
         .from("messages")
-        .select("id, role, content")
+        .select("id, role, content, reply_to_message_id")
         .eq("character_id", characterId)
         // Supabase returns at most 1,000 rows by default. Fetch newest first,
         // otherwise long stories display only old messages and appear to lose history.

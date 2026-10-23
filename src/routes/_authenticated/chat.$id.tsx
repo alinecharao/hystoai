@@ -1,8 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
-import { Brain, ChevronLeft, Ellipsis, Info, Pencil, RotateCcw, Trash2, UserRound, X } from "lucide-react";
+import { Brain, ChevronLeft, ChevronRight, Ellipsis, Info, Pencil, RotateCcw, Trash2, UserRound, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Conversation, ConversationContent, ConversationScrollButton } from "@/components/ai-elements/conversation";
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
@@ -87,10 +87,42 @@ function Avatar({ character, className }: { character: Character; className: str
 }
 
 type Persona = { id: string; name: string; description: string; is_default?: boolean };
+type AssistantVersion = { id: string; assistant_message_id: string; content: string; is_selected: boolean; created_at: string };
 
-function ChatWindow({ character, stored }: { character: Character; stored: { id: string; role: string; content: string }[] }) {
+function ChatWindow({ character, stored }: { character: Character; stored: { id: string; role: string; content: string; reply_to_message_id: string | null }[] }) {
   const { user } = Route.useRouteContext();
   const qc = useQueryClient();
+  const { data: responseVersionsEnabled = false } = useQuery({
+    queryKey: ["chat-feature-response-versions"],
+    queryFn: async () => {
+      const response = await fetch("/api/chat", { method: "GET", cache: "no-store" });
+      if (!response.ok) return false;
+      const result = await response.json() as { responseVersions?: boolean };
+      return result.responseVersions === true;
+    },
+    staleTime: 30_000,
+  });
+  const { data: responseVersions = [] } = useQuery({
+    queryKey: ["response-versions", character.id],
+    enabled: responseVersionsEnabled,
+    queryFn: async (): Promise<AssistantVersion[]> => {
+      // Read only alternatives for messages in the current chat window.
+      // Avoid transferring every long-form reply of an old story on mobile.
+      const assistantIds = stored.filter((item) => item.role === "assistant").map((item) => item.id);
+      if (!assistantIds.length) return [];
+      const { data, error } = await supabase.from("assistant_response_versions")
+        .select("id, assistant_message_id, content, is_selected, created_at")
+        .eq("character_id", character.id)
+        .eq("user_id", user.id)
+        .in("assistant_message_id", assistantIds)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+  const [versionViewerMessageId, setVersionViewerMessageId] = useState<string | null>(null);
+  const [versionChanging, setVersionChanging] = useState(false);
   const [input, setInput] = useState("");
   const sendingLock = useRef(false);
   const [visibleCount, setVisibleCount] = useState(15);
@@ -213,7 +245,22 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
         .order("id", { ascending: true })
         .range(start, start + 30);
       if (error) throw error;
-      setHistoryRows((data ?? []).slice(0, 30));
+      let pageRows = (data ?? []).slice(0, 30);
+      if (responseVersionsEnabled) {
+        const assistantIds = pageRows.filter((item) => item.role === "assistant").map((item) => item.id);
+        if (assistantIds.length > 0) {
+          const { data: selected, error: selectionError } = await supabase.from("assistant_response_versions")
+            .select("assistant_message_id, content")
+            .eq("character_id", character.id)
+            .eq("user_id", user.id)
+            .eq("is_selected", true)
+            .in("assistant_message_id", assistantIds);
+          if (selectionError) throw selectionError;
+          const selectedById = new Map((selected ?? []).map((item) => [item.assistant_message_id, item.content]));
+          pageRows = pageRows.map((item) => ({ ...item, content: selectedById.get(item.id) ?? item.content }));
+        }
+      }
+      setHistoryRows(pageRows);
       setHistoryHasMore((data ?? []).length > 30);
       setHistoryPage(page);
     } catch (error) {
@@ -238,7 +285,11 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
         return data.session ? { Authorization: `Bearer ${data.session.access_token}` } : {};
       },
       prepareSendMessagesRequest: ({ messages, headers }) => {
-        const last = messages[messages.length - 1];
+        // SDK regeneration may still expose the previous assistant while
+        // preparing its request. Always send the real preceding user turn.
+        const last = regenerateIdRef.current
+          ? [...messages].reverse().find((item) => item.role === "user")
+          : messages[messages.length - 1];
         const text = (last?.parts ?? []).map((part) => (part.type === "text" ? part.text : "")).join("");
         return { ...(headers ? { headers } : {}), body: { characterId: character.id, text, thoughts: thoughtsRef.current, provider: aiProviderRef.current, personaId: personaIdRef.current === "none" ? null : personaIdRef.current, regenerateMessageId: regenerateIdRef.current, clientMessageId: pendingClientMessageIdRef.current, retryMessageId: retryMessageIdRef.current } };
       },
@@ -249,8 +300,40 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
     id: character.id,
     messages: initial,
     transport,
-    onFinish: () => { regenerateIdRef.current = null; retryMessageIdRef.current = null; pendingClientMessageIdRef.current = null; sendingLock.current = false; void qc.invalidateQueries({ queryKey: ["messages", character.id] }); },
-    onError: () => { regenerateIdRef.current = null; retryMessageIdRef.current = null; pendingClientMessageIdRef.current = null; sendingLock.current = false; void qc.invalidateQueries({ queryKey: ["messages", character.id] }); },
+    onFinish: () => {
+      const fromAlternative = regenerateIdRef.current !== null;
+      regenerateIdRef.current = null;
+      retryMessageIdRef.current = null;
+      pendingClientMessageIdRef.current = null;
+      if (!fromAlternative) sendingLock.current = false;
+      void Promise.allSettled([
+        qc.invalidateQueries({ queryKey: ["messages", character.id] }),
+        qc.invalidateQueries({ queryKey: ["response-versions", character.id] }),
+      ]).then(() => {
+        // SDK regenerate() assigns a temporary ID; the saved original ID
+        // must remain the anchor of all its persisted alternatives.
+        if (fromAlternative) {
+          setMessages(initial);
+          sendingLock.current = false;
+        }
+      });
+    },
+    onError: () => {
+      const fromAlternative = regenerateIdRef.current !== null;
+      regenerateIdRef.current = null;
+      retryMessageIdRef.current = null;
+      pendingClientMessageIdRef.current = null;
+      if (!fromAlternative) sendingLock.current = false;
+      void Promise.allSettled([
+        qc.invalidateQueries({ queryKey: ["messages", character.id] }),
+        qc.invalidateQueries({ queryKey: ["response-versions", character.id] }),
+      ]).then(() => {
+        if (fromAlternative) {
+          setMessages(initial);
+          sendingLock.current = false;
+        }
+      });
+    },
   });
 
   // useChat only consumes initial messages on mount. Refresh its local state
@@ -270,7 +353,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
 
   const busy = status === "submitted" || status === "streaming";
   const sendOnce = (text: string) => {
-    if (sendingLock.current || busy || !text.trim()) return;
+    if (sendingLock.current || busy || versionChanging || !text.trim()) return;
     sendingLock.current = true;
     pendingClientMessageIdRef.current = crypto.randomUUID();
     void sendMessage({ text }).catch((error) => {
@@ -318,6 +401,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   }
 
   async function clearHistory() {
+    if (busy || versionChanging || sendingLock.current) return;
     if (!confirm("Apagar toda a conversa com este personagem?")) return;
 
     try {
@@ -448,7 +532,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   }
 
   async function deleteIndividualMessage(message: UIMessage) {
-    if (busy) return;
+    if (busy || versionChanging || sendingLock.current) return;
 
     if (!confirm("Apagar esta mensagem permanentemente?")) return;
 
@@ -463,11 +547,65 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
     }
   }
 
-  async function regenerateAssistantMessage(_message: UIMessage, _index: number) {
-    // Temporarily disabled: useChat appends a new user/assistant pair, while
-    // the server replaces an existing assistant row. Mixing the two paths
-    // can duplicate visible messages or desynchronize the chat.
-    alert("Gerar novamente está temporariamente desativado para proteger o histórico. Nenhuma mensagem foi alterada.");
+  async function regenerateAssistantMessage(message: UIMessage, index: number) {
+    if (busy || versionChanging || sendingLock.current) return;
+    if (!responseVersionsEnabled) {
+      alert("Gerar nova resposta ainda não foi habilitado neste ambiente.");
+      return;
+    }
+    // Versions of historical answers are read-only to avoid rewriting a
+    // story after the user has already continued past that answer.
+    const id = persistedMessageId(message);
+    const latest = stored[stored.length - 1];
+    const parent = stored[stored.length - 2];
+    if (!id || index !== messages.length - 1 || latest?.id !== id ||
+        parent?.role !== "user" || latest.reply_to_message_id !== parent.id) {
+      alert("Somente a última resposta salva pode ser regenerada. Atualize a conversa.");
+      return;
+    }
+    sendingLock.current = true;
+    regenerateIdRef.current = id;
+    pendingClientMessageIdRef.current = crypto.randomUUID();
+    setErrorHidden(true);
+    try {
+      await regenerate();
+    } catch (generationError) {
+      regenerateIdRef.current = null;
+      pendingClientMessageIdRef.current = null;
+      sendingLock.current = false;
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["messages", character.id] }),
+        qc.invalidateQueries({ queryKey: ["response-versions", character.id] }),
+      ]);
+      setMessages(initial);
+      alert(generationError instanceof Error ? generationError.message : "Não foi possível gerar uma alternativa.");
+    }
+  }
+
+  async function selectResponseVersion(assistantMessageId: string, versionId: string | null) {
+    if (busy || versionChanging || sendingLock.current || !responseVersionsEnabled) return;
+    if (stored[stored.length - 1]?.id !== assistantMessageId) {
+      alert("Para preservar a cronologia, versões anteriores ficam disponíveis apenas para consulta.");
+      return;
+    }
+    // Synchronous lock covers the brief gap before React renders disabled controls.
+    sendingLock.current = true;
+    setVersionChanging(true);
+    try {
+      const { data: selected, error: selectError } = await supabase
+        .rpc("select_assistant_response_version", {
+          p_assistant_message_id: assistantMessageId,
+          p_version_id: versionId,
+        });
+      if (selectError) throw selectError;
+      if (!selected) throw new Error("A história avançou ou uma geração está em andamento. Atualize a conversa.");
+      await qc.invalidateQueries({ queryKey: ["response-versions", character.id] });
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Não foi possível selecionar esta versão.");
+    } finally {
+      setVersionChanging(false);
+      sendingLock.current = false;
+    }
   }
 
   async function generateFromExistingUser(_message: UIMessage) {
@@ -477,6 +615,27 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
 
   return (
     <TooltipProvider>
+      <Dialog open={versionViewerMessageId !== null} onOpenChange={(open) => { if (!open) setVersionViewerMessageId(null); }}>
+        <DialogContent className="max-h-[85dvh] overflow-y-auto">
+          <DialogTitle>Versões da resposta</DialogTitle>
+          <DialogDescription>Versões antigas estão disponíveis para consulta. A continuidade permanece vinculada à versão escolhida quando a conversa avançou.</DialogDescription>
+          {versionViewerMessageId && (
+            <div className="space-y-3">
+              {(() => {
+                const base = stored.find((item) => item.id === versionViewerMessageId);
+                const alternatives = responseVersions.filter((item) => item.assistant_message_id === versionViewerMessageId);
+                return [{ id: "original", content: base?.content ?? "", is_selected: !alternatives.some((item) => item.is_selected) },
+                  ...alternatives].map((item, index) => (
+                    <div key={item.id} className="rounded-xl border border-border p-3">
+                      <p className="mb-2 text-xs font-medium text-muted-foreground">Versão {index + 1}{item.is_selected ? " · Escolhida" : ""}</p>
+                      <div className="whitespace-pre-wrap break-words text-sm">{item.content}</div>
+                    </div>
+                  ));
+              })()}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
       <Dialog open={historyDialog} onOpenChange={setHistoryDialog}>
         <DialogContent className="flex max-h-[85dvh] w-[calc(100%-2rem)] max-w-2xl flex-col overflow-hidden">
           <DialogTitle>Histórico desde o início</DialogTitle>
@@ -584,6 +743,22 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
               const index = visibleMessageStart + visibleIndex;
               const isLatestMessage = index === messages.length - 1;
               const canManageAssistant = message.role === "assistant";
+              const versions = responseVersions.filter((item) => item.assistant_message_id === message.id);
+              const selectedVersion = versions.find((item) => item.is_selected);
+              const shownText = selectedVersion?.content ?? messageText(message);
+              const selectedIndex = selectedVersion ? versions.findIndex((item) => item.id === selectedVersion.id) + 1 : 0;
+              const newestSaved = stored[stored.length - 1];
+              const precedingSaved = stored[stored.length - 2];
+              const canGenerateNewVersion =
+                responseVersionsEnabled &&
+                newestSaved?.id === message.id &&
+                precedingSaved?.role === "user" &&
+                newestSaved.reply_to_message_id === precedingSaved.id;
+              const unavailableReason = !responseVersionsEnabled
+                ? "A funcionalidade ainda não está ativa nesta prévia."
+                : !newestSaved || newestSaved.id !== message.id
+                  ? "Aguarde a sincronização da última resposta."
+                  : "Esta resposta não tem um vínculo de geração confirmado. Gere uma nova resposta em uma conversa de teste.";
               const canGenerateFromUser =
                 message.role === "user" &&
                 isLatestMessage &&
@@ -598,25 +773,56 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
 
               return (
                 <div key={message.id} className="group/message">
-                  <Bubble role={message.role} character={character} showThoughts={showThoughts} text={message.parts.map((part) => part.type === "text" ? part.text : "").join("")} />
+                  <Bubble role={message.role} character={character} showThoughts={showThoughts} text={shownText} />
                   {(
-                    <div className={`mt-1 flex items-center gap-1 px-1 ${message.role === "user" ? "justify-end" : "justify-start"}`}>
-                      {canManageAssistant && isLatestMessage && <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        disabled={busy}
-                        onClick={() => void regenerateAssistantMessage(message, index)}
-                        className="h-8 rounded-full px-2.5 text-xs text-muted-foreground opacity-100 transition hover:text-foreground sm:opacity-0 sm:group-hover/message:opacity-100"
-                      >
-                        <RotateCcw className="size-3.5" />
-                        Gerar novamente
-                      </Button>}
+                    <div className={`mt-1 flex flex-wrap items-center gap-1 px-1 ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+                      {canManageAssistant && versions.length > 0 && (
+                        isLatestMessage && stored[stored.length - 1]?.id === message.id
+                          ? <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                              <Button type="button" variant="ghost" size="icon" className="size-7 rounded-full"
+                                aria-label="Versão anterior" disabled={busy || versionChanging || selectedIndex === 0}
+                                onClick={() => void selectResponseVersion(message.id, selectedIndex <= 1 ? null : versions[selectedIndex - 2]!.id)}>
+                                <ChevronLeft className="size-3.5" />
+                              </Button>
+                              <span className="tabular-nums">{selectedIndex + 1}/{versions.length + 1}</span>
+                              <Button type="button" variant="ghost" size="icon" className="size-7 rounded-full"
+                                aria-label="Próxima versão" disabled={busy || versionChanging || selectedIndex >= versions.length}
+                                onClick={() => void selectResponseVersion(message.id, versions[selectedIndex]!.id)}>
+                                <ChevronRight className="size-3.5" />
+                              </Button>
+                            </div>
+                          : <Button type="button" variant="ghost" size="sm" className="h-8 rounded-full px-2.5 text-xs"
+                              onClick={() => setVersionViewerMessageId(message.id)}>
+                              Ver {versions.length + 1} versões
+                            </Button>
+                      )}
+                      {canManageAssistant && isLatestMessage && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                disabled={busy || versionChanging || !canGenerateNewVersion}
+                                onClick={() => void regenerateAssistantMessage(message, index)}
+                                className="h-8 rounded-full px-2.5 text-xs text-muted-foreground opacity-100 transition hover:text-foreground sm:opacity-0 sm:group-hover/message:opacity-100"
+                              >
+                                <RotateCcw className="size-3.5" />
+                                Gerar nova resposta
+                              </Button>
+                            </span>
+                          </TooltipTrigger>
+                          {!canGenerateNewVersion && (
+                            <TooltipContent>{unavailableReason}</TooltipContent>
+                          )}
+                        </Tooltip>
+                      )}
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
-                        disabled={busy}
+                        disabled={busy || versionChanging}
                         onClick={() => void deleteIndividualMessage(message)}
                         className="h-8 rounded-full px-2.5 text-xs text-muted-foreground opacity-100 transition hover:text-destructive sm:opacity-0 sm:group-hover/message:opacity-100"
                       >
@@ -715,7 +921,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
               className="relative rounded-3xl border-border bg-chat-glass shadow-lg"
               onSubmit={(message) => {
                 const text = message.text.trim();
-                if (!text || busy) return;
+                if (!text || busy || versionChanging || sendingLock.current) return;
                 setInput("");
                 sendOnce(text);
               }}
@@ -731,7 +937,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
               <PromptInputSubmit
                 status={status}
                 onStop={stop}
-                disabled={!busy && !input.trim()}
+                disabled={versionChanging || (!busy && !input.trim())}
                 className="mr-2 size-10 shrink-0 self-center rounded-full bg-chat-action text-primary-foreground hover:bg-chat-action/90"
               />
             </PromptInput>

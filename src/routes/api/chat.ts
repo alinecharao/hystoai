@@ -247,6 +247,12 @@ function getProviderConfigs(request: Request): ProviderConfig[] {
 export const Route = createFileRoute("/api/chat")({
   server: {
     handlers: {
+      GET: async () => new Response(JSON.stringify({
+        responseVersions: process.env["HYSTO_RESPONSE_VERSIONS"] === "true" &&
+          process.env["HYSTO_ATOMIC_APPEND"] === "true",
+      }), {
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      }),
       DELETE: async ({ request }) => {
         const url = process.env["SUPABASE_URL"]!;
         const key = process.env["SUPABASE_PUBLISHABLE_KEY"]!;
@@ -351,6 +357,13 @@ export const Route = createFileRoute("/api/chat")({
         if (body.retryMessageId && !uuidPattern.test(body.retryMessageId)) {
           return json(400, "Identificador da mensagem original inválido.");
         }
+        if (body.regenerateMessageId && !uuidPattern.test(body.regenerateMessageId)) {
+          return json(400, "Identificador da resposta inválido.");
+        }
+        const regenerating = Boolean(body.regenerateMessageId);
+        if (regenerating && (body.retryMessageId || process.env["HYSTO_RESPONSE_VERSIONS"] !== "true" || process.env["HYSTO_ATOMIC_APPEND"] !== "true")) {
+          return json(409, "Versões alternativas ainda não habilitadas neste ambiente.");
+        }
 
 
         const { data: character } = await supabase
@@ -362,7 +375,7 @@ export const Route = createFileRoute("/api/chat")({
 
         const { data: history, error: histErr } = await supabase
           .from("messages")
-          .select("id, role, content")
+          .select("id, role, content, reply_to_message_id")
           .eq("character_id", character.id)
           .eq("user_id", userId)
           .order("created_at", { ascending: false })
@@ -370,9 +383,20 @@ export const Route = createFileRoute("/api/chat")({
           .limit(80);
         if (histErr) return json(500, histErr.message);
 
-        // Never overwrite an assistant response during regeneration.
-        if (body.regenerateMessageId) {
-          return json(409, "Regeneração indisponível até a implementação segura de versões de resposta.");
+        // Alternatives never update or replace the original messages row.
+        // Only the latest persisted assistant response is eligible.
+        const latestMessage = history?.[0];
+        let regenerationParentId: string | null = null;
+        if (regenerating) {
+          if (latestMessage?.role !== "assistant" || latestMessage.id !== body.regenerateMessageId ||
+              !latestMessage.reply_to_message_id) {
+            return json(409, "Apenas a última resposta salva pode gerar versões alternativas.");
+          }
+          const parent = history?.find((item) => item.id === latestMessage.reply_to_message_id);
+          if (!parent || parent.role !== "user" || parent.content.trim() !== text) {
+            return json(409, "A mensagem original não corresponde ao histórico. Atualize a conversa.");
+          }
+          regenerationParentId = parent.id;
         }
         // Fail closed until the Lovable Cloud migration is confirmed and
         // HYSTO_ENABLE_CHAT_RECOVERY is explicitly enabled server-side.
@@ -380,7 +404,6 @@ export const Route = createFileRoute("/api/chat")({
         if (body.retryMessageId && (process.env["HYSTO_ENABLE_CHAT_RECOVERY"] !== "true" || process.env["HYSTO_ATOMIC_APPEND"] !== "true")) {
           return json(409, "Recuperação ainda não habilitada neste ambiente.");
         }
-        const latestMessage = history?.[0];
         const retrying = Boolean(body.retryMessageId);
         if (retrying) {
           // Only the last persisted user turn may be recovered. Any assistant
@@ -389,7 +412,7 @@ export const Route = createFileRoute("/api/chat")({
               latestMessage.role !== "user" || latestMessage.content.trim() !== text) {
             return json(409, "A mensagem não está pendente de resposta. Atualize o histórico.");
           }
-        } else if (latestMessage?.role === "user") {
+        } else if (!regenerating && latestMessage?.role === "user") {
           // A pending user turn must be resolved before another is appended.
           // Otherwise the new turn would make the original unrecoverable,
           // because claims only permit recovery of the latest user turn.
@@ -415,7 +438,7 @@ export const Route = createFileRoute("/api/chat")({
           console.warn("story_memory_read_failed", error);
         }
 
-        if (!retrying) {
+        if (!retrying && !regenerating) {
           // The atomic RPC serializes competing sends for the same conversation.
           // Keep the legacy insert path until the additive migration is deployed.
           // Once the migration is confirmed, enable HYSTO_ATOMIC_APPEND=true.
@@ -465,7 +488,38 @@ export const Route = createFileRoute("/api/chat")({
           return m && COMMANDS[m[1]!] ? COMMANDS[m[1]!]! : content;
         };
 
-        const full = [...(history ?? [])].reverse();
+        // In version mode, use the selected alternative for narrative continuity.
+        // The immutable original message remains stored and available for selection.
+        const selectedVersions = new Map<string, string>();
+        if (process.env["HYSTO_RESPONSE_VERSIONS"] === "true") {
+          const ids = (history ?? []).filter((item) => item.role === "assistant").map((item) => item.id);
+          if (ids.length) {
+            const { data: activeVersions, error: versionsError } = await supabase
+              .from("assistant_response_versions")
+              .select("assistant_message_id, content")
+              .eq("user_id", userId)
+              .eq("character_id", character.id)
+              .eq("is_selected", true)
+              .in("assistant_message_id", ids);
+            if (versionsError) {
+              console.error("response_versions_read_failed", { code: versionsError.code });
+              return json(503, "Não foi possível carregar a versão selecionada da história.");
+            }
+            for (const item of activeVersions ?? []) selectedVersions.set(item.assistant_message_id, item.content);
+          }
+        }
+        const full = [...(history ?? [])].reverse()
+          .filter((item) => !regenerating || item.id !== body.regenerateMessageId)
+          .map((item) => item.role === "assistant" && selectedVersions.has(item.id)
+            ? { ...item, content: selectedVersions.get(item.id)! }
+            : item);
+        // The checkpoint might describe an alternative that was not selected.
+        // Do not inject stale scene/facts from that checkpoint into a new branch.
+        if (storyMemory?.last_processed_message_id &&
+            (selectedVersions.has(storyMemory.last_processed_message_id) ||
+             (regenerating && storyMemory.last_processed_message_id === body.regenerateMessageId))) {
+          storyMemory = null;
+        }
         // A newly started story must not inherit a saved memory checkpoint.
         // Only trust memory when its checkpoint belongs to this character\u0027s actual history.
         if (full.length === 0 || !storyMemory?.last_processed_message_id || !full.some((m) => m.id === storyMemory?.last_processed_message_id)) {
@@ -569,7 +623,8 @@ export const Route = createFileRoute("/api/chat")({
           ...(full.length === 0 && character.opening_scene
             ? [{ role: "assistant" as const, content: character.opening_scene }]
             : []),
-          ...recent.filter((m) => !retrying || m.id !== body.retryMessageId).map((m) => ({
+          ...recent.filter((m) => !(retrying && m.id === body.retryMessageId) &&
+            !(regenerating && m.id === regenerationParentId)).map((m) => ({
             role: m.role as "user" | "assistant",
             content:
               m.role === "user"
@@ -790,7 +845,9 @@ export const Route = createFileRoute("/api/chat")({
         // Atualização periódica e não crítica: a conversa é sempre salva primeiro.
         // Falhas, limites e respostas inválidas da memória nunca falham o chat.
         const updateStoryMemory = async (assistantReply: string, assistantMessageId: string) => {
-          const completeHistory = [...full, { role: "user", content: text }, { role: "assistant", content: assistantReply }];
+          // Recovery reuses an existing pending user turn: include it once.
+          const historicalTurns = retrying ? full.filter((item) => item.id !== body.retryMessageId) : full;
+          const completeHistory = [...historicalTurns, { role: "user", content: text }, { role: "assistant", content: assistantReply }];
           // Atualizar a cada 8 turnos, priorizando o contexto mais recente.
           // A atualização é baseada no contexto recente + resumo anterior, sem reescrever o fundo.
           const assistantCount = completeHistory.filter((m) => m.role === "assistant").length;
@@ -843,6 +900,21 @@ export const Route = createFileRoute("/api/chat")({
               });
               return;
             }
+            // A background summary of the original response must not overwrite
+            // continuity after the user has selected another version.
+            if (process.env["HYSTO_RESPONSE_VERSIONS"] === "true") {
+              const { data: activeReply, error: activeReplyError } = await supabase
+                .from("assistant_response_versions")
+                .select("content")
+                .eq("assistant_message_id", assistantMessageId)
+                .eq("user_id", userId)
+                .eq("is_selected", true)
+                .maybeSingle();
+              if (activeReplyError || (activeReply && activeReply.content !== assistantReply)) {
+                console.warn("story_memory_selected_version_changed", { code: activeReplyError?.code });
+                return;
+              }
+            }
             const { error } = await supabase
               .from("story_memories")
               .upsert({
@@ -862,19 +934,28 @@ export const Route = createFileRoute("/api/chat")({
 
         // Atomic claim must succeed before any model work starts.
         // Missing RPC, permissions, or a concurrent claim all fail closed.
-        const generationUserMessageId = retrying ? body.retryMessageId! : clientMessageId;
+        const generationUserMessageId = regenerating ? regenerationParentId! : retrying ? body.retryMessageId! : clientMessageId;
         let recoveryClaimToken: string | null = null;
+        let regenerationClaimToken: string | null = null;
         try {
-          const { data: claim, error: claimError } = await supabase.rpc("claim_chat_generation", {
-            p_user_message_id: generationUserMessageId,
-            p_character_id: character.id,
-          });
+          const { data: claim, error: claimError } = regenerating
+            ? await supabase.rpc("claim_assistant_regeneration", {
+                p_assistant_message_id: body.regenerateMessageId!,
+                p_character_id: character.id,
+              })
+            : await supabase.rpc("claim_chat_generation", {
+                p_user_message_id: generationUserMessageId,
+                p_character_id: character.id,
+              });
           if (claimError) {
             console.error("chat_generation_claim_failed", { code: claimError.code });
             return json(503, "Não foi possível iniciar a geração. Sua mensagem foi preservada.");
           }
-          if (!claim) return json(409, "Esta mensagem já está em processamento ou não está mais pendente.");
-          recoveryClaimToken = claim;
+          if (!claim) return json(409, regenerating
+            ? "Esta resposta já está sendo regenerada ou a conversa avançou. Atualize o histórico."
+            : "Esta mensagem já está em processamento ou não está mais pendente.");
+          if (regenerating) regenerationClaimToken = claim;
+          else recoveryClaimToken = claim;
         } catch (claimException) {
           console.error("chat_generation_claim_exception", claimException);
           return json(503, "Não foi possível verificar a geração. Sua mensagem foi preservada.");
@@ -882,14 +963,21 @@ export const Route = createFileRoute("/api/chat")({
 
         let savedAssistant = false;
         const releaseRecoveryClaim = async () => {
-          if (!recoveryClaimToken) return;
-          const tokenToRelease = recoveryClaimToken;
+          if (!recoveryClaimToken && !regenerationClaimToken) return;
+          const tokenToRelease = regenerating ? regenerationClaimToken : recoveryClaimToken;
           recoveryClaimToken = null;
+          regenerationClaimToken = null;
+          if (!tokenToRelease) return;
           try {
-            const { error: releaseError } = await supabase.rpc("release_chat_generation", {
-              p_user_message_id: generationUserMessageId,
-              p_claim_token: tokenToRelease,
-            });
+            const { error: releaseError } = regenerating
+              ? await supabase.rpc("release_assistant_regeneration", {
+                  p_assistant_message_id: body.regenerateMessageId!,
+                  p_claim_token: tokenToRelease,
+                })
+              : await supabase.rpc("release_chat_generation", {
+                  p_user_message_id: generationUserMessageId,
+                  p_claim_token: tokenToRelease,
+                });
             if (releaseError) console.warn("chat_recovery_release_failed", { code: releaseError.code });
           } catch (releaseError) {
             // Lease expiration is the fallback if the release RPC is unreachable.
@@ -911,6 +999,21 @@ export const Route = createFileRoute("/api/chat")({
               try {
                 const cleanedReply = removeGenerationLoops(reply);
                 if (!cleanedReply || savedAssistant) {
+                  return;
+                }
+                if (regenerating) {
+                  const { data: savedVersionId, error: saveVersionError } = await supabase.rpc(
+                    "finish_assistant_regeneration", {
+                      p_assistant_message_id: body.regenerateMessageId!,
+                      p_claim_token: regenerationClaimToken!,
+                      p_content: cleanedReply,
+                    },
+                  );
+                  if (saveVersionError || !savedVersionId) {
+                    console.error("response_version_save_failed", { code: saveVersionError?.code });
+                    throw new Error("A nova versão não pôde ser salva. A resposta original foi preservada.");
+                  }
+                  savedAssistant = true;
                   return;
                 }
                 const saveQuery = supabase.from("messages").insert({
