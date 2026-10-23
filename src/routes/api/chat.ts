@@ -951,7 +951,9 @@ export const Route = createFileRoute("/api/chat")({
             console.error("chat_generation_claim_failed", { code: claimError.code });
             return json(503, "Não foi possível iniciar a geração. Sua mensagem foi preservada.");
           }
-          if (!claim) return json(409, "Esta mensagem já está em processamento ou não está mais pendente.");
+          if (!claim) return json(409, regenerating
+            ? "Esta resposta já está sendo regenerada ou a conversa avançou. Atualize o histórico."
+            : "Esta mensagem já está em processamento ou não está mais pendente.");
           if (regenerating) regenerationClaimToken = claim;
           else recoveryClaimToken = claim;
         } catch (claimException) {
