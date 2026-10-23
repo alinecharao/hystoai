@@ -377,7 +377,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   const visibleMessageStart = Math.max(0, messages.length - visibleCount);
   const visibleMessages = messages.slice(visibleMessageStart);
 
-  async function deletePersistedMessages(options: { role?: "user" | "assistant"; all?: boolean; messageId?: string }) {
+  async function deletePersistedMessages(options: { all?: boolean; messageId?: string }) {
     const { data } = await supabase.auth.getSession();
     const token = data.session?.access_token;
     if (!token) throw new Error("Sessão não encontrada.");
@@ -418,34 +418,6 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
     return (message.parts ?? [])
       .map((part) => (part.type === "text" ? part.text : ""))
       .join("");
-  }
-
-  function lastUserMessage() {
-    return [...messages].reverse().find((message) => message.role === "user") ?? null;
-  }
-
-  async function removeLatestPersistedMessage(role: "user" | "assistant") {
-    await deletePersistedMessages({ role });
-  }
-
-  async function removeLatestPersistedUserMessage(_text?: string) {
-    return removeLatestPersistedMessage("user");
-  }
-
-  function removeLastLocalUserMessage() {
-    let removed = false;
-    const next = [...messages]
-      .reverse()
-      .filter((message) => {
-        if (!removed && message.role === "user") {
-          removed = true;
-          return false;
-        }
-        return true;
-      })
-      .reverse();
-
-    setMessages(next);
   }
 
   async function deleteFailedMessage() {
