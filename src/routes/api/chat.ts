@@ -247,6 +247,12 @@ function getProviderConfigs(request: Request): ProviderConfig[] {
 export const Route = createFileRoute("/api/chat")({
   server: {
     handlers: {
+      GET: async () => new Response(JSON.stringify({
+        responseVersions: process.env["HYSTO_RESPONSE_VERSIONS"] === "true" &&
+          process.env["HYSTO_ATOMIC_APPEND"] === "true",
+      }), {
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      }),
       DELETE: async ({ request }) => {
         const url = process.env["SUPABASE_URL"]!;
         const key = process.env["SUPABASE_PUBLISHABLE_KEY"]!;
