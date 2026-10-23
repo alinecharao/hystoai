@@ -89,7 +89,7 @@ function Avatar({ character, className }: { character: Character; className: str
 type Persona = { id: string; name: string; description: string; is_default?: boolean };
 type AssistantVersion = { id: string; assistant_message_id: string; content: string; is_selected: boolean; created_at: string };
 
-function ChatWindow({ character, stored }: { character: Character; stored: { id: string; role: string; content: string }[] }) {
+function ChatWindow({ character, stored }: { character: Character; stored: { id: string; role: string; content: string; reply_to_message_id: string | null }[] }) {
   const { user } = Route.useRouteContext();
   const qc = useQueryClient();
   const { data: responseVersionsEnabled = false } = useQuery({
@@ -558,7 +558,8 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
     const id = persistedMessageId(message);
     const latest = stored[stored.length - 1];
     const parent = stored[stored.length - 2];
-    if (!id || index !== messages.length - 1 || latest?.id !== id || parent?.role !== "user") {
+    if (!id || index !== messages.length - 1 || latest?.id !== id ||
+        parent?.role !== "user" || latest.reply_to_message_id !== parent.id) {
       alert("Somente a última resposta salva pode ser regenerada. Atualize a conversa.");
       return;
     }
@@ -783,7 +784,10 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
                               Ver {versions.length + 1} versões
                             </Button>
                       )}
-                      {canManageAssistant && isLatestMessage && responseVersionsEnabled && <Button
+                      {canManageAssistant && isLatestMessage && responseVersionsEnabled &&
+                       stored[stored.length - 1]?.id === message.id &&
+                       stored[stored.length - 1]?.reply_to_message_id === stored[stored.length - 2]?.id &&
+                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
