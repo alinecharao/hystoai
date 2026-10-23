@@ -824,6 +824,25 @@ export const Route = createFileRoute("/api/chat")({
             if (!parsed || typeof parsed !== "object") return;
             const fields = parsed as Record<string, unknown>;
             if (!["summary", "scene", "known_facts"].every((field) => typeof fields[field] === "string" && (fields[field] as string).length <= 2400)) return;
+            // Memory generation is asynchronous. A newer assistant turn may have
+            // completed while this summary was being generated. Never let an
+            // older summary overwrite the continuity of a newer scene.
+            const { data: latestAssistant, error: latestAssistantError } = await supabase
+              .from("messages")
+              .select("id")
+              .eq("user_id", userId)
+              .eq("character_id", character.id)
+              .eq("role", "assistant")
+              .order("created_at", { ascending: false })
+              .order("id", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if (latestAssistantError || latestAssistant?.id !== assistantMessageId) {
+              console.warn("story_memory_stale_update_skipped", {
+                code: latestAssistantError?.code,
+              });
+              return;
+            }
             const { error } = await supabase
               .from("story_memories")
               .upsert({
