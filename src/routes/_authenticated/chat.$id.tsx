@@ -1,8 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
-import { Brain, ChevronLeft, Ellipsis, Info, Pencil, RotateCcw, Trash2, UserRound, X } from "lucide-react";
+import { Brain, ChevronLeft, ChevronRight, Ellipsis, Info, Pencil, RotateCcw, Trash2, UserRound, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Conversation, ConversationContent, ConversationScrollButton } from "@/components/ai-elements/conversation";
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
@@ -87,10 +87,37 @@ function Avatar({ character, className }: { character: Character; className: str
 }
 
 type Persona = { id: string; name: string; description: string; is_default?: boolean };
+type AssistantVersion = { id: string; assistant_message_id: string; content: string; is_selected: boolean; created_at: string };
 
 function ChatWindow({ character, stored }: { character: Character; stored: { id: string; role: string; content: string }[] }) {
   const { user } = Route.useRouteContext();
   const qc = useQueryClient();
+  const { data: responseVersionsEnabled = false } = useQuery({
+    queryKey: ["chat-feature-response-versions"],
+    queryFn: async () => {
+      const response = await fetch("/api/chat", { method: "GET", cache: "no-store" });
+      if (!response.ok) return false;
+      const result = await response.json() as { responseVersions?: boolean };
+      return result.responseVersions === true;
+    },
+    staleTime: 30_000,
+  });
+  const { data: responseVersions = [] } = useQuery({
+    queryKey: ["response-versions", character.id],
+    enabled: responseVersionsEnabled,
+    queryFn: async (): Promise<AssistantVersion[]> => {
+      const { data, error } = await supabase.from("assistant_response_versions")
+        .select("id, assistant_message_id, content, is_selected, created_at")
+        .eq("character_id", character.id)
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+  const [versionViewerMessageId, setVersionViewerMessageId] = useState<string | null>(null);
+  const [versionChanging, setVersionChanging] = useState(false);
   const [input, setInput] = useState("");
   const sendingLock = useRef(false);
   const [visibleCount, setVisibleCount] = useState(15);
@@ -249,8 +276,32 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
     id: character.id,
     messages: initial,
     transport,
-    onFinish: () => { regenerateIdRef.current = null; retryMessageIdRef.current = null; pendingClientMessageIdRef.current = null; sendingLock.current = false; void qc.invalidateQueries({ queryKey: ["messages", character.id] }); },
-    onError: () => { regenerateIdRef.current = null; retryMessageIdRef.current = null; pendingClientMessageIdRef.current = null; sendingLock.current = false; void qc.invalidateQueries({ queryKey: ["messages", character.id] }); },
+    onFinish: () => {
+      const fromAlternative = regenerateIdRef.current !== null;
+      regenerateIdRef.current = null;
+      retryMessageIdRef.current = null;
+      pendingClientMessageIdRef.current = null;
+      sendingLock.current = false;
+      void Promise.all([
+        qc.invalidateQueries({ queryKey: ["messages", character.id] }),
+        qc.invalidateQueries({ queryKey: ["response-versions", character.id] }),
+      ]).then(() => {
+        // SDK regenerate() assigns a temporary ID; the saved original ID
+        // must remain the anchor of all its persisted alternatives.
+        if (fromAlternative) setMessages(initial);
+      });
+    },
+    onError: () => {
+      const fromAlternative = regenerateIdRef.current !== null;
+      regenerateIdRef.current = null;
+      retryMessageIdRef.current = null;
+      pendingClientMessageIdRef.current = null;
+      sendingLock.current = false;
+      void Promise.all([
+        qc.invalidateQueries({ queryKey: ["messages", character.id] }),
+        qc.invalidateQueries({ queryKey: ["response-versions", character.id] }),
+      ]).then(() => { if (fromAlternative) setMessages(initial); });
+    },
   });
 
   // useChat only consumes initial messages on mount. Refresh its local state
