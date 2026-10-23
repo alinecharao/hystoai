@@ -898,6 +898,21 @@ export const Route = createFileRoute("/api/chat")({
               });
               return;
             }
+            // A background summary of the original response must not overwrite
+            // continuity after the user has selected another version.
+            if (process.env["HYSTO_RESPONSE_VERSIONS"] === "true") {
+              const { data: activeReply, error: activeReplyError } = await supabase
+                .from("assistant_response_versions")
+                .select("content")
+                .eq("assistant_message_id", assistantMessageId)
+                .eq("user_id", userId)
+                .eq("is_selected", true)
+                .maybeSingle();
+              if (activeReplyError || (activeReply && activeReply.content !== assistantReply)) {
+                console.warn("story_memory_selected_version_changed", { code: activeReplyError?.code });
+                return;
+              }
+            }
             const { error } = await supabase
               .from("story_memories")
               .upsert({
