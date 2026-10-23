@@ -587,6 +587,8 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
       alert("Para preservar a cronologia, versões anteriores ficam disponíveis apenas para consulta.");
       return;
     }
+    // Synchronous lock covers the brief gap before React renders disabled controls.
+    sendingLock.current = true;
     setVersionChanging(true);
     try {
       const { data: selected, error: selectError } = await supabase
@@ -601,6 +603,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
       alert(error instanceof Error ? error.message : "Não foi possível selecionar esta versão.");
     } finally {
       setVersionChanging(false);
+      sendingLock.current = false;
     }
   }
 
