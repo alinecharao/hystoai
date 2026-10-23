@@ -514,11 +514,61 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
     }
   }
 
-  async function regenerateAssistantMessage(_message: UIMessage, _index: number) {
-    // Temporarily disabled: useChat appends a new user/assistant pair, while
-    // the server replaces an existing assistant row. Mixing the two paths
-    // can duplicate visible messages or desynchronize the chat.
-    alert("Gerar novamente está temporariamente desativado para proteger o histórico. Nenhuma mensagem foi alterada.");
+  async function regenerateAssistantMessage(message: UIMessage, index: number) {
+    if (busy || versionChanging || sendingLock.current) return;
+    if (!responseVersionsEnabled) {
+      alert("Gerar nova resposta ainda não foi habilitado neste ambiente.");
+      return;
+    }
+    // Versions of historical answers are read-only to avoid rewriting a
+    // story after the user has already continued past that answer.
+    const id = persistedMessageId(message);
+    const latest = stored[stored.length - 1];
+    const parent = stored[stored.length - 2];
+    if (!id || index !== messages.length - 1 || latest?.id !== id || parent?.role !== "user") {
+      alert("Somente a última resposta salva pode ser regenerada. Atualize a conversa.");
+      return;
+    }
+    sendingLock.current = true;
+    regenerateIdRef.current = id;
+    pendingClientMessageIdRef.current = crypto.randomUUID();
+    setErrorHidden(true);
+    try {
+      await regenerate();
+    } catch (generationError) {
+      regenerateIdRef.current = null;
+      pendingClientMessageIdRef.current = null;
+      sendingLock.current = false;
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["messages", character.id] }),
+        qc.invalidateQueries({ queryKey: ["response-versions", character.id] }),
+      ]);
+      setMessages(initial);
+      alert(generationError instanceof Error ? generationError.message : "Não foi possível gerar uma alternativa.");
+    }
+  }
+
+  async function selectResponseVersion(assistantMessageId: string, versionId: string | null) {
+    if (busy || versionChanging || sendingLock.current || !responseVersionsEnabled) return;
+    if (stored[stored.length - 1]?.id !== assistantMessageId) {
+      alert("Para preservar a cronologia, versões anteriores ficam disponíveis apenas para consulta.");
+      return;
+    }
+    setVersionChanging(true);
+    try {
+      const { data: selected, error: selectError } = await supabase
+        .rpc("select_assistant_response_version", {
+          p_assistant_message_id: assistantMessageId,
+          p_version_id: versionId,
+        });
+      if (selectError) throw selectError;
+      if (!selected) throw new Error("A história avançou ou uma geração está em andamento. Atualize a conversa.");
+      await qc.invalidateQueries({ queryKey: ["response-versions", character.id] });
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Não foi possível selecionar esta versão.");
+    } finally {
+      setVersionChanging(false);
+    }
   }
 
   async function generateFromExistingUser(_message: UIMessage) {
