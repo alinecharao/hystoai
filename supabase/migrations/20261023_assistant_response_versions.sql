@@ -106,7 +106,11 @@ begin
   perform pg_advisory_xact_lock(hashtextextended(v_uid::text || ':' || v_character::text, 173));
   select m.id into v_latest from public.messages m where m.user_id = v_uid
     and m.character_id = v_character order by m.created_at desc, m.id desc limit 1;
-  if v_latest is distinct from p_assistant_message_id then return null; end if;
+  if v_latest is distinct from p_assistant_message_id or not exists (
+    select 1 from public.messages m where m.id = p_assistant_message_id
+      and m.user_id = v_uid and m.character_id = v_character
+      and m.role = 'assistant' and m.reply_to_message_id is not null
+  ) then return null; end if;
 
   update public.assistant_response_versions set is_selected = false
     where assistant_message_id = p_assistant_message_id and user_id = v_uid and is_selected;
