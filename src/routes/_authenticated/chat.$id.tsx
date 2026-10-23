@@ -290,14 +290,17 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
       regenerateIdRef.current = null;
       retryMessageIdRef.current = null;
       pendingClientMessageIdRef.current = null;
-      sendingLock.current = false;
-      void Promise.all([
+      if (!fromAlternative) sendingLock.current = false;
+      void Promise.allSettled([
         qc.invalidateQueries({ queryKey: ["messages", character.id] }),
         qc.invalidateQueries({ queryKey: ["response-versions", character.id] }),
       ]).then(() => {
         // SDK regenerate() assigns a temporary ID; the saved original ID
         // must remain the anchor of all its persisted alternatives.
-        if (fromAlternative) setMessages(initial);
+        if (fromAlternative) {
+          setMessages(initial);
+          sendingLock.current = false;
+        }
       });
     },
     onError: () => {
@@ -305,11 +308,16 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
       regenerateIdRef.current = null;
       retryMessageIdRef.current = null;
       pendingClientMessageIdRef.current = null;
-      sendingLock.current = false;
-      void Promise.all([
+      if (!fromAlternative) sendingLock.current = false;
+      void Promise.allSettled([
         qc.invalidateQueries({ queryKey: ["messages", character.id] }),
         qc.invalidateQueries({ queryKey: ["response-versions", character.id] }),
-      ]).then(() => { if (fromAlternative) setMessages(initial); });
+      ]).then(() => {
+        if (fromAlternative) {
+          setMessages(initial);
+          sendingLock.current = false;
+        }
+      });
     },
   });
 
@@ -378,6 +386,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   }
 
   async function clearHistory() {
+    if (busy || versionChanging || sendingLock.current) return;
     if (!confirm("Apagar toda a conversa com este personagem?")) return;
 
     try {
@@ -508,7 +517,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   }
 
   async function deleteIndividualMessage(message: UIMessage) {
-    if (busy) return;
+    if (busy || versionChanging || sendingLock.current) return;
 
     if (!confirm("Apagar esta mensagem permanentemente?")) return;
 
@@ -771,7 +780,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
                         type="button"
                         variant="ghost"
                         size="sm"
-                        disabled={busy}
+                        disabled={busy || versionChanging}
                         onClick={() => void deleteIndividualMessage(message)}
                         className="h-8 rounded-full px-2.5 text-xs text-muted-foreground opacity-100 transition hover:text-destructive sm:opacity-0 sm:group-hover/message:opacity-100"
                       >
@@ -870,7 +879,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
               className="relative rounded-3xl border-border bg-chat-glass shadow-lg"
               onSubmit={(message) => {
                 const text = message.text.trim();
-                if (!text || busy) return;
+                if (!text || busy || versionChanging || sendingLock.current) return;
                 setInput("");
                 sendOnce(text);
               }}
@@ -886,7 +895,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
               <PromptInputSubmit
                 status={status}
                 onStop={stop}
-                disabled={!busy && !input.trim()}
+                disabled={versionChanging || (!busy && !input.trim())}
                 className="mr-2 size-10 shrink-0 self-center rounded-full bg-chat-action text-primary-foreground hover:bg-chat-action/90"
               />
             </PromptInput>
