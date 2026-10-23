@@ -34,6 +34,22 @@ const json = (status: number, error: string) =>
     headers: { "Content-Type": "application/json" },
   });
 
+function publicGenerationError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  // Do not expose provider request bodies, organization identifiers, key
+  // fragments, internal URLs or stack traces directly in the chat UI.
+  if (/rate.?limit|tokens per minute|\bTPM\b|request too large|quota|429/i.test(message)) {
+    return "O provedor de IA atingiu um limite temporário. Sua mensagem foi preservada. Tente novamente mais tarde ou selecione Automático.";
+  }
+  if (/insufficient.balance|payment.required|billing|402/i.test(message)) {
+    return "O provedor de IA está sem créditos disponíveis. Sua mensagem foi preservada. Selecione outro provedor ou Automático.";
+  }
+  if (/abort|cancel/i.test(message)) {
+    return "A geração foi interrompida. Sua mensagem continua no histórico.";
+  }
+  return "O serviço de IA não conseguiu concluir a resposta. Sua mensagem foi preservada; tente novamente ou selecione outro provedor.";
+}
+
 
 type AiProvider = "auto" | "gemini" | "groq" | "openrouter" | "kimi" | "openai";
 type ConcreteProvider = Exclude<AiProvider, "auto">;
@@ -1105,7 +1121,7 @@ export const Route = createFileRoute("/api/chat")({
           return result.toUIMessageStreamResponse({
             onError: (e) => {
               console.error("Erro ao converter stream para UI:", e);
-              return e instanceof Error ? e.message : "Erro ao gerar resposta.";
+              return publicGenerationError(e);
             },
           });
         } catch (responseError) {
