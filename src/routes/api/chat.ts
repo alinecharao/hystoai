@@ -935,18 +935,37 @@ export const Route = createFileRoute("/api/chat")({
                 return;
               }
             }
-            const { error } = await supabase
-              .from("story_memories")
-              .upsert({
-                user_id: userId,
-                character_id: character.id,
-                summary: fields["summary"],
-                scene: fields["scene"],
-                known_facts: fields["known_facts"],
-                last_processed_message_id: assistantMessageId,
-                updated_at: new Date().toISOString(),
-              } as never, { onConflict: "user_id,character_id" });
-            if (error) console.warn("story_memory_write_unavailable", { code: error.code });
+            if (process.env["HYSTO_ATOMIC_MEMORY_CHECKPOINT"] === "true") {
+              // The RPC rechecks the newest assistant and active response version
+              // inside one transaction. Old background summaries cannot overwrite
+              // the current scene even if concurrent updates finish out of order.
+              const { data: saved, error: saveError } = await supabase.rpc(
+                "commit_chat_story_memory", {
+                  p_character_id: character.id,
+                  p_assistant_message_id: assistantMessageId,
+                  p_summary: fields["summary"] as string,
+                  p_scene: fields["scene"] as string,
+                  p_known_facts: fields["known_facts"] as string,
+                },
+              );
+              if (saveError) console.warn("story_memory_atomic_write_failed", { code: saveError.code });
+              else if (!saved) console.info("story_memory_stale_checkpoint_skipped");
+            } else {
+              // Legacy path is kept until the additive SQL migration is
+              // installed in Lovable Cloud and the feature flag is enabled.
+              const { error } = await supabase
+                .from("story_memories")
+                .upsert({
+                  user_id: userId,
+                  character_id: character.id,
+                  summary: fields["summary"],
+                  scene: fields["scene"],
+                  known_facts: fields["known_facts"],
+                  last_processed_message_id: assistantMessageId,
+                  updated_at: new Date().toISOString(),
+                } as never, { onConflict: "user_id,character_id" });
+              if (error) console.warn("story_memory_write_unavailable", { code: error.code });
+            }
           } catch (error) {
             console.warn("story_memory_update_skipped", error instanceof Error ? error.message : String(error));
           }
