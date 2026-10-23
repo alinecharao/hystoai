@@ -578,6 +578,27 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
 
   return (
     <TooltipProvider>
+      <Dialog open={versionViewerMessageId !== null} onOpenChange={(open) => { if (!open) setVersionViewerMessageId(null); }}>
+        <DialogContent className="max-h-[85dvh] overflow-y-auto">
+          <DialogTitle>Versões da resposta</DialogTitle>
+          <DialogDescription>Versões antigas estão disponíveis para consulta. A continuidade permanece vinculada à versão escolhida quando a conversa avançou.</DialogDescription>
+          {versionViewerMessageId && (
+            <div className="space-y-3">
+              {(() => {
+                const base = stored.find((item) => item.id === versionViewerMessageId);
+                const alternatives = responseVersions.filter((item) => item.assistant_message_id === versionViewerMessageId);
+                return [{ id: "original", content: base?.content ?? "", is_selected: !alternatives.some((item) => item.is_selected) },
+                  ...alternatives].map((item, index) => (
+                    <div key={item.id} className="rounded-xl border border-border p-3">
+                      <p className="mb-2 text-xs font-medium text-muted-foreground">Versão {index + 1}{item.is_selected ? " · Escolhida" : ""}</p>
+                      <div className="whitespace-pre-wrap break-words text-sm">{item.content}</div>
+                    </div>
+                  ));
+              })()}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
       <Dialog open={historyDialog} onOpenChange={setHistoryDialog}>
         <DialogContent className="flex max-h-[85dvh] w-[calc(100%-2rem)] max-w-2xl flex-col overflow-hidden">
           <DialogTitle>Histórico desde o início</DialogTitle>
@@ -685,6 +706,10 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
               const index = visibleMessageStart + visibleIndex;
               const isLatestMessage = index === messages.length - 1;
               const canManageAssistant = message.role === "assistant";
+              const versions = responseVersions.filter((item) => item.assistant_message_id === message.id);
+              const selectedVersion = versions.find((item) => item.is_selected);
+              const shownText = selectedVersion?.content ?? messageText(message);
+              const selectedIndex = selectedVersion ? versions.findIndex((item) => item.id === selectedVersion.id) + 1 : 0;
               const canGenerateFromUser =
                 message.role === "user" &&
                 isLatestMessage &&
@@ -699,19 +724,39 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
 
               return (
                 <div key={message.id} className="group/message">
-                  <Bubble role={message.role} character={character} showThoughts={showThoughts} text={message.parts.map((part) => part.type === "text" ? part.text : "").join("")} />
+                  <Bubble role={message.role} character={character} showThoughts={showThoughts} text={shownText} />
                   {(
                     <div className={`mt-1 flex items-center gap-1 px-1 ${message.role === "user" ? "justify-end" : "justify-start"}`}>
-                      {canManageAssistant && isLatestMessage && <Button
+                      {canManageAssistant && versions.length > 0 && (
+                        isLatestMessage && stored[stored.length - 1]?.id === message.id
+                          ? <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                              <Button type="button" variant="ghost" size="icon" className="size-7 rounded-full"
+                                aria-label="Versão anterior" disabled={busy || versionChanging || selectedIndex === 0}
+                                onClick={() => void selectResponseVersion(message.id, selectedIndex <= 1 ? null : versions[selectedIndex - 2]!.id)}>
+                                <ChevronLeft className="size-3.5" />
+                              </Button>
+                              <span className="tabular-nums">{selectedIndex + 1}/{versions.length + 1}</span>
+                              <Button type="button" variant="ghost" size="icon" className="size-7 rounded-full"
+                                aria-label="Próxima versão" disabled={busy || versionChanging || selectedIndex >= versions.length}
+                                onClick={() => void selectResponseVersion(message.id, versions[selectedIndex]!.id)}>
+                                <ChevronRight className="size-3.5" />
+                              </Button>
+                            </div>
+                          : <Button type="button" variant="ghost" size="sm" className="h-8 rounded-full px-2.5 text-xs"
+                              onClick={() => setVersionViewerMessageId(message.id)}>
+                              Ver {versions.length + 1} versões
+                            </Button>
+                      )}
+                      {canManageAssistant && isLatestMessage && responseVersionsEnabled && <Button
                         type="button"
                         variant="ghost"
                         size="sm"
-                        disabled={busy}
+                        disabled={busy || versionChanging}
                         onClick={() => void regenerateAssistantMessage(message, index)}
                         className="h-8 rounded-full px-2.5 text-xs text-muted-foreground opacity-100 transition hover:text-foreground sm:opacity-0 sm:group-hover/message:opacity-100"
                       >
                         <RotateCcw className="size-3.5" />
-                        Gerar novamente
+                        Gerar nova resposta
                       </Button>}
                       <Button
                         type="button"
