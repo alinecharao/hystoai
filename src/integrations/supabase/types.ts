@@ -318,6 +318,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      commit_chat_story_memory: {
+        Args: {
+          p_character_id: string
+          p_assistant_message_id: string
+          p_summary: string
+          p_scene: string
+          p_known_facts: string
+        }
+        Returns: boolean
+      }
       claim_assistant_regeneration: {
         Args: { p_assistant_message_id: string; p_character_id: string }
         Returns: string | null

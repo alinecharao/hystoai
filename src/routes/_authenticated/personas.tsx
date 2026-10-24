@@ -71,34 +71,78 @@ function PersonasPage() {
   const save = async () => {
     if (!name.trim() || saving) return;
     setFormError("");
+
+    // Validate before uploading any file or changing the selected default.
+    const parsedAge = age.trim() ? Number(age) : null;
+    if (parsedAge !== null && (!Number.isInteger(parsedAge) || parsedAge < 1 || parsedAge > 120)) {
+      setFormError("Informe uma idade válida entre 1 e 120 anos.");
+      return;
+    }
+    if (photoFile && (!["image/jpeg", "image/png", "image/webp"].includes(photoFile.type) || photoFile.size > 5 * 1024 * 1024)) {
+      setFormError("Escolha uma foto JPG, PNG ou WebP com até 5 MB.");
+      return;
+    }
+
     setSaving(true);
     let uploadedPath: string | null = null;
-    let resolvedPhotoUrl = photoUrl.trim();
-    if (photoFile) {
-      const extension = photoFile.type === "image/png" ? "png" : photoFile.type === "image/webp" ? "webp" : "jpg";
-      const path = user.id + "/" + crypto.randomUUID() + "." + extension;
-      const { error: uploadError } = await supabase.storage.from("persona-photos").upload(path, photoFile, { contentType: photoFile.type, upsert: false });
-      if (uploadError) { setFormError("Falha no upload da foto. Verifique a migração de armazenamento. Detalhes: " + uploadError.message); setSaving(false); return; }
-      uploadedPath = path;
-      resolvedPhotoUrl = supabase.storage.from("persona-photos").getPublicUrl(path).data.publicUrl;
+    let saved = false;
+    let clearedOldDefault = false;
+    const previousDefault = isDefault ? items.find((persona) => persona.is_default && persona.id !== editing) : null;
+
+    try {
+      let resolvedPhotoUrl = photoUrl.trim();
+      if (photoFile) {
+        const extension = photoFile.type === "image/png" ? "png" : photoFile.type === "image/webp" ? "webp" : "jpg";
+        const path = user.id + "/" + crypto.randomUUID() + "." + extension;
+        const { error: uploadError } = await supabase.storage.from("persona-photos")
+          .upload(path, photoFile, { contentType: photoFile.type, upsert: false });
+        if (uploadError) throw new Error("Falha no upload da foto: " + uploadError.message);
+        uploadedPath = path;
+        resolvedPhotoUrl = supabase.storage.from("persona-photos").getPublicUrl(path).data.publicUrl;
+      }
+
+      const payload = {
+        name: name.trim(), description: roleDescription.trim(), photo_url: resolvedPhotoUrl,
+        gender: gender.trim(), age: parsedAge, role_description: roleDescription.trim(),
+        likes: likes.trim(), dislikes: dislikes.trim(), boundaries: boundaries.trim(),
+        is_default: isDefault, user_id: user.id,
+      };
+
+      if (previousDefault) {
+        const { error: unsetError } = await supabase.from("personas")
+          .update({ is_default: false } as never).eq("id", previousDefault.id).eq("user_id", user.id);
+        if (unsetError) throw unsetError;
+        clearedOldDefault = true;
+      }
+      const query = editing
+        ? supabase.from("personas").update(payload as never).eq("id", editing).eq("user_id", user.id)
+        : supabase.from("personas").insert(payload as never);
+      const { error: saveError } = await query;
+      if (saveError) throw saveError;
+      saved = true;
+      setOpen(false);
+      await reload();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha de conexão ao salvar a persona.";
+      let restoreError = "";
+      // A failed save must not silently discard the previous default persona.
+      if (!saved && clearedOldDefault && previousDefault) {
+        try {
+          const { error: rollbackError } = await supabase.from("personas")
+            .update({ is_default: true } as never).eq("id", previousDefault.id).eq("user_id", user.id);
+          if (rollbackError) restoreError = " Não foi possível restaurar a persona padrão anterior.";
+        } catch {
+          restoreError = " Não foi possível restaurar a persona padrão anterior.";
+        }
+      }
+      if (!saved && uploadedPath) {
+        try { await supabase.storage.from("persona-photos").remove([uploadedPath]); }
+        catch (cleanupError) { console.warn("persona_photo_cleanup_failed", cleanupError); }
+      }
+      setFormError("Não foi possível salvar a persona. " + message + restoreError);
+    } finally {
+      setSaving(false);
     }
-    const payload = { name: name.trim(), description: roleDescription.trim(), photo_url: resolvedPhotoUrl, gender: gender.trim(), age: age ? Number(age) : null, role_description: roleDescription.trim(), likes: likes.trim(), dislikes: dislikes.trim(), boundaries: boundaries.trim(), is_default: isDefault, user_id: user.id };
-    if (age && (!Number.isInteger(Number(age)) || Number(age) < 1 || Number(age) > 120)) { setFormError("Informe uma idade válida."); setSaving(false); return; }
-    if (isDefault) {
-      const { error: unsetError } = await supabase.from("personas").update({ is_default: false } as never).eq("user_id", user.id).eq("is_default", true);
-      if (unsetError) { setFormError(unsetError.message); setSaving(false); return; }
-    }
-    const query = editing
-      ? supabase.from("personas").update(payload as never).eq("id", editing).eq("user_id", user.id)
-      : supabase.from("personas").insert(payload as never);
-    const { error: saveError } = await query;
-    setSaving(false);
-    if (saveError) {
-      if (uploadedPath) await supabase.storage.from("persona-photos").remove([uploadedPath]);
-      setFormError("Não foi possível salvar. Verifique se a migração 20261014_persona_fields.sql foi executada. Detalhes: " + saveError.message); return;
-    }
-    setOpen(false);
-    await reload();
   };
   const remove = async (persona: Persona) => {
     if (!confirm(`Excluir a persona "${persona.name}"? As conversas não serão apagadas.`)) return;

@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateText, streamText, type ModelMessage } from "ai";
 import type { Database } from "@/integrations/supabase/types";
+import { parseChatDeletion } from "@/lib/chat-validation";
 
 // Remove only obvious consecutive loops; preserve ordinary literary repetition.
 function removeGenerationLoops(value: string): string {
@@ -33,6 +34,22 @@ const json = (status: number, error: string) =>
     status,
     headers: { "Content-Type": "application/json" },
   });
+
+function publicGenerationError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  // Do not expose provider request bodies, organization identifiers, key
+  // fragments, internal URLs or stack traces directly in the chat UI.
+  if (/rate.?limit|tokens per minute|\bTPM\b|request too large|quota|429/i.test(message)) {
+    return "O provedor de IA atingiu um limite temporário. Sua mensagem foi preservada. Tente novamente mais tarde ou selecione Automático.";
+  }
+  if (/insufficient.balance|payment.required|billing|402/i.test(message)) {
+    return "O provedor de IA está sem créditos disponíveis. Sua mensagem foi preservada. Selecione outro provedor ou Automático.";
+  }
+  if (/abort|cancel/i.test(message)) {
+    return "A geração foi interrompida. Sua mensagem continua no histórico.";
+  }
+  return "O serviço de IA não conseguiu concluir a resposta. Sua mensagem foi preservada; tente novamente ou selecione outro provedor.";
+}
 
 
 type AiProvider = "auto" | "gemini" | "groq" | "openrouter" | "kimi" | "openai";
@@ -268,22 +285,19 @@ export const Route = createFileRoute("/api/chat")({
         if (authErr || !claims?.claims?.sub) return json(401, "Sessão inválida.");
         const userId = claims.claims.sub;
 
-        const body = (await request.json()) as {
-          characterId?: string;
-          role?: "user" | "assistant";
-          all?: boolean;
-          messageId?: string;
-        };
-
-        if (!body.characterId) return json(400, "Personagem não informado.");
+        const rawDeleteBody: unknown = await request.json().catch(() => null);
+        const deletion = parseChatDeletion(rawDeleteBody);
+        if (!deletion) {
+          return json(400, "Exclusão inválida. Informe um ID exato de mensagem ou confirme a exclusão de toda a conversa.");
+        }
 
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-        if (body.all) {
+        if (deletion.type === "conversation") {
           const { error } = await supabaseAdmin
             .from("messages")
             .delete()
-            .eq("character_id", body.characterId)
+            .eq("character_id", deletion.characterId)
             .eq("user_id", userId);
 
           if (error) return json(500, error.message);
@@ -292,17 +306,17 @@ export const Route = createFileRoute("/api/chat")({
           });
         }
 
-        if (body.messageId) {
+        if (deletion.type === "message") {
           const { data: deleted, error: deleteError } = await supabaseAdmin
             .from("messages")
             .delete()
-            .eq("id", body.messageId)
-            .eq("character_id", body.characterId)
+            .eq("id", deletion.messageId)
+            .eq("character_id", deletion.characterId)
             .eq("user_id", userId)
             .select("id");
           if (deleteError) return json(500, deleteError.message);
           if (!deleted?.length) return json(404, "Resposta não encontrada ou já excluída.");
-          return new Response(JSON.stringify({ ok: true, id: body.messageId }), {
+          return new Response(JSON.stringify({ ok: true, id: deletion.messageId }), {
             headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
           });
         }
@@ -325,9 +339,13 @@ export const Route = createFileRoute("/api/chat")({
         if (authErr || !claims?.claims?.sub) return json(401, "Sessão inválida.");
         const userId = claims.claims.sub;
 
-        const body = (await request.json()) as {
-          characterId?: string;
-          text?: string;
+        const rawChatBody: unknown = await request.json().catch(() => null);
+        if (!rawChatBody || typeof rawChatBody !== "object" || Array.isArray(rawChatBody)) {
+          return json(400, "Solicitação de mensagem inválida.");
+        }
+        const body = rawChatBody as {
+          characterId?: unknown;
+          text?: unknown;
           thoughts?: boolean;
           provider?: AiProvider;
           personaId?: string | null;
@@ -335,13 +353,19 @@ export const Route = createFileRoute("/api/chat")({
           clientMessageId?: string;
           retryMessageId?: string;
         };
-        const text = body.text?.trim();
-        if (!body.characterId || !text) return json(400, "Mensagem vazia.");
+        const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const text = typeof body.text === "string" ? body.text.trim() : "";
+        if (!text) return json(400, "Mensagem vazia.");
+        if (text.length > 50000) {
+          return json(413, "Esta mensagem é muito longa. Divida o texto em partes menores antes de enviar.");
+        }
+        if (typeof body.characterId !== "string" || !uuidPattern.test(body.characterId)) {
+          return json(400, "Identificador do personagem inválido.");
+        }
         // Use the client UUID as the primary key too: the existing PK enforces
         // idempotency even before an optional unique client_message_id index.
         const clientMessageId = body.clientMessageId;
-        const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        if (!clientMessageId || !uuidPattern.test(clientMessageId)) {
+        if (typeof clientMessageId !== "string" || !uuidPattern.test(clientMessageId)) {
           return json(400, "Identificador de envio inválido. Atualize o aplicativo.");
         }
         const { data: previousSend, error: previousSendError } = await supabase
@@ -354,10 +378,10 @@ export const Route = createFileRoute("/api/chat")({
         if (previousSend) {
           return json(409, "Este envio já foi registrado. Atualize o histórico antes de tentar novamente.");
         }
-        if (body.retryMessageId && !uuidPattern.test(body.retryMessageId)) {
+        if (body.retryMessageId !== undefined && (typeof body.retryMessageId !== "string" || !uuidPattern.test(body.retryMessageId))) {
           return json(400, "Identificador da mensagem original inválido.");
         }
-        if (body.regenerateMessageId && !uuidPattern.test(body.regenerateMessageId)) {
+        if (body.regenerateMessageId !== undefined && (typeof body.regenerateMessageId !== "string" || !uuidPattern.test(body.regenerateMessageId))) {
           return json(400, "Identificador da resposta inválido.");
         }
         const regenerating = Boolean(body.regenerateMessageId);
@@ -915,18 +939,37 @@ export const Route = createFileRoute("/api/chat")({
                 return;
               }
             }
-            const { error } = await supabase
-              .from("story_memories")
-              .upsert({
-                user_id: userId,
-                character_id: character.id,
-                summary: fields["summary"],
-                scene: fields["scene"],
-                known_facts: fields["known_facts"],
-                last_processed_message_id: assistantMessageId,
-                updated_at: new Date().toISOString(),
-              } as never, { onConflict: "user_id,character_id" });
-            if (error) console.warn("story_memory_write_unavailable", { code: error.code });
+            if (process.env["HYSTO_ATOMIC_MEMORY_CHECKPOINT"] === "true") {
+              // The RPC rechecks the newest assistant and active response version
+              // inside one transaction. Old background summaries cannot overwrite
+              // the current scene even if concurrent updates finish out of order.
+              const { data: saved, error: saveError } = await supabase.rpc(
+                "commit_chat_story_memory", {
+                  p_character_id: character.id,
+                  p_assistant_message_id: assistantMessageId,
+                  p_summary: fields["summary"] as string,
+                  p_scene: fields["scene"] as string,
+                  p_known_facts: fields["known_facts"] as string,
+                },
+              );
+              if (saveError) console.warn("story_memory_atomic_write_failed", { code: saveError.code });
+              else if (!saved) console.info("story_memory_stale_checkpoint_skipped");
+            } else {
+              // Legacy path is kept until the additive SQL migration is
+              // installed in Lovable Cloud and the feature flag is enabled.
+              const { error } = await supabase
+                .from("story_memories")
+                .upsert({
+                  user_id: userId,
+                  character_id: character.id,
+                  summary: fields["summary"],
+                  scene: fields["scene"],
+                  known_facts: fields["known_facts"],
+                  last_processed_message_id: assistantMessageId,
+                  updated_at: new Date().toISOString(),
+                } as never, { onConflict: "user_id,character_id" });
+              if (error) console.warn("story_memory_write_unavailable", { code: error.code });
+            }
           } catch (error) {
             console.warn("story_memory_update_skipped", error instanceof Error ? error.message : String(error));
           }
@@ -1066,7 +1109,7 @@ export const Route = createFileRoute("/api/chat")({
           return result.toUIMessageStreamResponse({
             onError: (e) => {
               console.error("Erro ao converter stream para UI:", e);
-              return e instanceof Error ? e.message : "Erro ao gerar resposta.";
+              return publicGenerationError(e);
             },
           });
         } catch (responseError) {

@@ -47,31 +47,56 @@ function AuthPage() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (busy) return;
     setBusy(true);
     setMsg(null);
-    if (mode === "in") {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) setMsg(error.message);
-      else {
+    try {
+      if (mode === "in") {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) {
+          setMsg(error.message);
+          return;
+        }
         const { data: verified, error: verifyError } = await supabase.auth.getUser();
-        if (verifyError || !verified.user) setMsg("Login realizado, mas não foi possível validar a sessão. Atualize a página e tente novamente.");
-        else navigate({ to: "/dashboard", replace: true });
+        if (verifyError || !verified.user) {
+          setMsg("Login realizado, mas não foi possível validar a sessão. Atualize a página e tente novamente.");
+          return;
+        }
+        await navigate({ to: "/dashboard", replace: true });
+      } else {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo: window.location.origin },
+        });
+        if (error) setMsg(error.message);
+        else if (!data.session) setMsg("Confira seu e-mail para confirmar a conta.");
+        else await navigate({ to: "/dashboard", replace: true });
       }
-    } else {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: { emailRedirectTo: window.location.origin },
-      });
-      if (error) setMsg(error.message);
-      else if (!data.session) setMsg("Confira seu e-mail para confirmar a conta.");
+    } catch (error) {
+      console.warn("hysto_auth_request_failed", error);
+      setMsg("Não foi possível conectar à autenticação. Verifique sua conexão e tente novamente.");
+    } finally {
+      // Network failures and provider exceptions must never leave login locked.
+      setBusy(false);
     }
-    setBusy(false);
   }
 
   async function google() {
-    const r = await lovable.auth.signInWithOAuth("google", { redirect_uri: `${window.location.origin}/auth` });
-    if (r.error) setMsg(r.error.message);
+    if (busy) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      const result = await lovable.auth.signInWithOAuth("google", {
+        redirect_uri: `${window.location.origin}/auth`,
+      });
+      if (result.error) setMsg(result.error.message);
+    } catch (error) {
+      console.warn("hysto_google_auth_failed", error);
+      setMsg("Não foi possível iniciar o login com Google. Tente novamente.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   const field = "w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:border-primary";
@@ -83,7 +108,7 @@ function AuthPage() {
         <p className="mb-8 mt-2 text-center text-sm text-muted-foreground">
           {mode === "in" ? "Entre para continuar suas conversas" : "Crie sua conta"}
         </p>
-        <button onClick={google} className="mb-4 w-full rounded-lg border border-border bg-card py-2.5 text-sm font-medium hover:border-primary">
+        <button type="button" disabled={busy} onClick={() => void google()} className="mb-4 w-full disabled:opacity-50 rounded-lg border border-border bg-card py-2.5 text-sm font-medium hover:border-primary">
           Continuar com Google
         </button>
         <div className="mb-4 text-center text-xs text-muted-foreground">ou</div>
@@ -95,7 +120,7 @@ function AuthPage() {
             {mode === "in" ? "Entrar" : "Criar conta"}
           </button>
         </form>
-        <button onClick={() => setMode(mode === "in" ? "up" : "in")} className="mt-4 w-full text-center text-sm text-muted-foreground hover:text-foreground">
+        <button type="button" disabled={busy} onClick={() => { setMode(mode === "in" ? "up" : "in"); setMsg(null); }} className="mt-4 disabled:opacity-50 w-full text-center text-sm text-muted-foreground hover:text-foreground">
           {mode === "in" ? "Não tem conta? Criar agora" : "Já tem conta? Entrar"}
         </button>
       </div>
