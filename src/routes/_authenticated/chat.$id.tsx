@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { supabase } from "@/integrations/supabase/client";
+import { activeChatTurnIds } from "@/lib/chat-validation";
 import lunaPortrait from "@/assets/luna-portrait.jpg";
 import rexPortrait from "@/assets/rex-portrait.jpg";
 import helenaPortrait from "@/assets/helena-portrait.jpg";
@@ -291,7 +292,18 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
           ? [...messages].reverse().find((item) => item.role === "user")
           : messages[messages.length - 1];
         const text = (last?.parts ?? []).map((part) => (part.type === "text" ? part.text : "")).join("");
-        return { ...(headers ? { headers } : {}), body: { characterId: character.id, text, thoughts: thoughtsRef.current, provider: aiProviderRef.current, personaId: personaIdRef.current === "none" ? null : personaIdRef.current, regenerateMessageId: regenerateIdRef.current, clientMessageId: pendingClientMessageIdRef.current, retryMessageId: retryMessageIdRef.current } };
+        return {
+          ...(headers ? { headers } : {}),
+          body: {
+            characterId: character.id,
+            text,
+            thoughts: thoughtsRef.current,
+            provider: aiProviderRef.current,
+            personaId: personaIdRef.current === "none" ? null : personaIdRef.current,
+            clientMessageId: pendingClientMessageIdRef.current,
+            ...activeChatTurnIds(regenerateIdRef.current, retryMessageIdRef.current),
+          },
+        };
       },
     }),
     [character.id],
@@ -355,6 +367,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   const sendOnce = (text: string) => {
     if (sendingLock.current || busy || versionChanging || !text.trim()) return;
     sendingLock.current = true;
+    setErrorHidden(true);
     pendingClientMessageIdRef.current = crypto.randomUUID();
     void sendMessage({ text }).catch((error) => {
       sendingLock.current = false;
@@ -826,17 +839,26 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
               <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
                 <p>{readableChatError}</p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={busy}
-                    onClick={() => void retryFailedMessage()}
-                    className="h-8 rounded-full border-destructive/30 bg-background/60 text-xs text-foreground"
-                  >
-                    <RotateCcw className="size-3.5" />
-                    Tentar novamente
-                  </Button>
+                  {stored[stored.length - 1]?.role === "user" ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => void retryFailedMessage()}
+                      className="h-8 rounded-full border-destructive/30 bg-background/60 text-xs text-foreground"
+                    >
+                      <RotateCcw className="size-3.5" />
+                      Recuperar resposta
+                    </Button>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Não há mensagem pendente para recuperar.
+                      {responseVersionsEnabled && stored[stored.length - 1]?.role === "assistant"
+                        ? " Para tentar outra versão, use “Gerar nova resposta” na última mensagem."
+                        : " Verifique o histórico antes de enviar novamente."}
+                    </p>
+                  )}
                   <Button
                     type="button"
                     variant="ghost"
