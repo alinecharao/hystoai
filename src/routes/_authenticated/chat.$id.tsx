@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { supabase } from "@/integrations/supabase/client";
 import { activeChatTurnIds } from "@/lib/chat-validation";
+import { hasPersistedUserTurn, latestPendingUserTurn, toPersistedChatMessages } from "@/lib/chat-reconciliation";
 import lunaPortrait from "@/assets/luna-portrait.jpg";
 import rexPortrait from "@/assets/rex-portrait.jpg";
 import helenaPortrait from "@/assets/helena-portrait.jpg";
@@ -124,6 +125,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   });
   const [versionViewerMessageId, setVersionViewerMessageId] = useState<string | null>(null);
   const [versionChanging, setVersionChanging] = useState(false);
+  const [deletingMessages, setDeletingMessages] = useState(false);
   const [input, setInput] = useState("");
   const sendingLock = useRef(false);
   const [visibleCount, setVisibleCount] = useState(15);
@@ -271,10 +273,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
     }
   };
 
-  const initial = useMemo<UIMessage[]>(
-    () => stored.map((m) => ({ id: m.id, role: m.role as "user" | "assistant", parts: [{ type: "text", text: m.content }] })),
-    [stored],
-  );
+  const initial = useMemo<UIMessage[]>(() => toPersistedChatMessages(stored), [stored]);
   const regenerateIdRef = useRef<string | null>(null);
   const pendingClientMessageIdRef = useRef<string | null>(null);
   const retryMessageIdRef = useRef<string | null>(null);
@@ -317,36 +316,34 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
       regenerateIdRef.current = null;
       retryMessageIdRef.current = null;
       pendingClientMessageIdRef.current = null;
-      if (!fromAlternative) sendingLock.current = false;
-      void Promise.allSettled([
-        qc.invalidateQueries({ queryKey: ["messages", character.id] }),
-        qc.invalidateQueries({ queryKey: ["response-versions", character.id] }),
-      ]).then(() => {
-        // SDK regenerate() assigns a temporary ID; the saved original ID
-        // must remain the anchor of all its persisted alternatives.
-        if (fromAlternative) {
-          setMessages(initial);
-          sendingLock.current = false;
-        }
-      });
+      // Keep the lock until the persisted conversation is synchronized.
+      void reconcileFinishedTurn(fromAlternative);
     },
     onError: () => {
       const fromAlternative = regenerateIdRef.current !== null;
       regenerateIdRef.current = null;
       retryMessageIdRef.current = null;
       pendingClientMessageIdRef.current = null;
-      if (!fromAlternative) sendingLock.current = false;
-      void Promise.allSettled([
-        qc.invalidateQueries({ queryKey: ["messages", character.id] }),
-        qc.invalidateQueries({ queryKey: ["response-versions", character.id] }),
-      ]).then(() => {
-        if (fromAlternative) {
-          setMessages(initial);
-          sendingLock.current = false;
-        }
-      });
+      void reconcileFinishedTurn(fromAlternative);
     },
   });
+
+  async function reconcileFinishedTurn(restorePersistedState: boolean) {
+    try {
+      const [fresh] = await Promise.all([
+        qc.fetchQuery(messagesQuery(character.id)),
+        qc.invalidateQueries({ queryKey: ["response-versions", character.id] }),
+      ]);
+      // Regeneration SDK replies have temporary IDs. Always use the real
+      // database rows instead of reapplying a stale render-time initial array.
+      if (restorePersistedState) setMessages(toPersistedChatMessages(fresh));
+    } catch (syncError) {
+      console.warn("hysto_chat_reconciliation_failed", syncError);
+      // Never guess an ID or clear a conversation after a failed refresh.
+    } finally {
+      sendingLock.current = false;
+    }
+  }
 
   // useChat only consumes initial messages on mount. Refresh its local state
   // when the persisted history changes, but never during an active generation.
@@ -368,11 +365,26 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
     if (sendingLock.current || busy || versionChanging || !text.trim()) return;
     sendingLock.current = true;
     setErrorHidden(true);
-    pendingClientMessageIdRef.current = crypto.randomUUID();
-    void sendMessage({ text }).catch((error) => {
-      sendingLock.current = false;
-      pendingClientMessageIdRef.current = null;
+    const clientMessageId = crypto.randomUUID();
+    pendingClientMessageIdRef.current = clientMessageId;
+    void sendMessage({ text }).catch(async (error) => {
       console.error("chat_send_failed", error);
+      try {
+        const saved = await qc.fetchQuery(messagesQuery(character.id));
+        // Only an unsaved client turn is restored as draft. A saved turn must
+        // remain pending for recovery, never resent as a duplicate.
+        if (!hasPersistedUserTurn(saved, clientMessageId)) {
+          setInput((current) => current.trim() ? current : text);
+        }
+      } catch (syncError) {
+        console.warn("chat_send_verify_failed", syncError);
+        // Unknown persistence status: do not prompt a potentially duplicate send.
+      } finally {
+        if (pendingClientMessageIdRef.current === clientMessageId) {
+          pendingClientMessageIdRef.current = null;
+        }
+        sendingLock.current = false;
+      }
     });
   };
   const readableChatError = useMemo(() => {
@@ -416,13 +428,24 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   async function clearHistory() {
     if (busy || versionChanging || sendingLock.current) return;
     if (!confirm("Apagar toda a conversa com este personagem?")) return;
-
+    sendingLock.current = true;
+    setDeletingMessages(true);
+    let deletionConfirmed = false;
     try {
       await deletePersistedMessages({ all: true });
-      setMessages([]);
-      await qc.invalidateQueries({ queryKey: ["messages", character.id] });
+      deletionConfirmed = true;
+      const fresh = await qc.fetchQuery(messagesQuery(character.id));
+      setMessages(toPersistedChatMessages(fresh));
+      await qc.invalidateQueries({ queryKey: ["response-versions", character.id] });
     } catch (deleteError) {
-      alert(deleteError instanceof Error ? deleteError.message : "Não foi possível limpar a conversa.");
+      if (deletionConfirmed) {
+        alert("A exclusão foi confirmada, mas não foi possível atualizar a tela. Recarregue a conversa.");
+      } else {
+        alert(deleteError instanceof Error ? deleteError.message : "Não foi possível limpar a conversa.");
+      }
+    } finally {
+      setDeletingMessages(false);
+      sendingLock.current = false;
     }
   }
 
@@ -446,29 +469,16 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
     sendingLock.current = true;
     let generationStarted = false;
     try {
-      const { data: latest, error: latestError } = await supabase.from("messages")
-        .select("id, role, content")
-        .eq("character_id", character.id)
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-        .order("id", { ascending: false })
-        .limit(1);
-      if (latestError) throw latestError;
-      const pending = latest?.[0];
-      if (!pending || pending.role !== "user") {
-        await qc.invalidateQueries({ queryKey: ["messages", character.id] });
+      // One server snapshot prevents contradictory latest/history reads.
+      // Limit to the latest window instead of requesting the entire story,
+      // which can exceed the API row cap on very long narratives.
+      const history = await qc.fetchQuery(messagesQuery(character.id));
+      const pending = latestPendingUserTurn(history);
+      if (!pending) {
         setErrorHidden(true);
         alert("Não há mensagem pendente. O histórico foi atualizado.");
         return;
       }
-
-      const { data: history, error: historyError } = await supabase.from("messages")
-        .select("id, role, content")
-        .eq("character_id", character.id)
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: true })
-        .order("id", { ascending: true });
-      if (historyError) throw historyError;
       // Refresh only from persisted data. Do not mutate the SDK chat state
       // immediately before regenerate(): React state updates are asynchronous,
       // and regenerate could otherwise target a stale or unsaved message.
@@ -479,11 +489,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
         .join("");
       if (lastVisible?.id !== pending.id || lastVisible.role !== "user" ||
           visibleText.trim() !== pending.content.trim()) {
-        setMessages((history ?? []).map((item) => ({
-          id: item.id,
-          role: item.role as "user" | "assistant",
-          parts: [{ type: "text" as const, text: item.content }],
-        })));
+        setMessages(toPersistedChatMessages(history));
         alert("O histórico foi sincronizado. Clique novamente para recuperar a resposta.");
         return;
       }
@@ -518,17 +524,31 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
 
   async function deleteIndividualMessage(message: UIMessage) {
     if (busy || versionChanging || sendingLock.current) return;
-
     if (!confirm("Apagar esta mensagem permanentemente?")) return;
-
     const databaseId = persistedMessageId(message);
-    if (!databaseId) { alert("Não foi possível identificar esta mensagem com segurança. Atualize a conversa e tente novamente."); return; }
+    if (!databaseId) {
+      alert("Não foi possível identificar esta mensagem com segurança. Atualize a conversa e tente novamente.");
+      return;
+    }
+    sendingLock.current = true;
+    setDeletingMessages(true);
+    let deletionConfirmed = false;
     try {
       await deletePersistedMessages({ messageId: databaseId });
-      setMessages(messages.filter((item) => item.id !== message.id));
-      await qc.invalidateQueries({ queryKey: ["messages", character.id] });
+      deletionConfirmed = true;
+      // No optimistic filter: another tab may have altered linked responses.
+      const fresh = await qc.fetchQuery(messagesQuery(character.id));
+      setMessages(toPersistedChatMessages(fresh));
+      await qc.invalidateQueries({ queryKey: ["response-versions", character.id] });
     } catch (deleteError) {
-      alert(deleteError instanceof Error ? deleteError.message : "Não foi possível apagar a mensagem.");
+      if (deletionConfirmed) {
+        alert("A mensagem foi apagada, mas a tela não sincronizou. Atualize a conversa.");
+      } else {
+        alert(deleteError instanceof Error ? deleteError.message : "Não foi possível apagar a mensagem.");
+      }
+    } finally {
+      setDeletingMessages(false);
+      sendingLock.current = false;
     }
   }
 
@@ -557,12 +577,15 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
     } catch (generationError) {
       regenerateIdRef.current = null;
       pendingClientMessageIdRef.current = null;
-      sendingLock.current = false;
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: ["messages", character.id] }),
-        qc.invalidateQueries({ queryKey: ["response-versions", character.id] }),
-      ]);
-      setMessages(initial);
+      try {
+        const fresh = await qc.fetchQuery(messagesQuery(character.id));
+        setMessages(toPersistedChatMessages(fresh));
+        await qc.invalidateQueries({ queryKey: ["response-versions", character.id] });
+      } catch (syncError) {
+        console.warn("hysto_regeneration_reconciliation_failed", syncError);
+      } finally {
+        sendingLock.current = false;
+      }
       alert(generationError instanceof Error ? generationError.message : "Não foi possível gerar uma alternativa.");
     }
   }
@@ -765,13 +788,13 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
                         isLatestMessage && stored[stored.length - 1]?.id === message.id
                           ? <div className="flex items-center gap-1 text-xs text-muted-foreground">
                               <Button type="button" variant="ghost" size="icon" className="size-7 rounded-full"
-                                aria-label="Versão anterior" disabled={busy || versionChanging || selectedIndex === 0}
+                                aria-label="Versão anterior" disabled={busy || versionChanging || deletingMessages || selectedIndex === 0}
                                 onClick={() => void selectResponseVersion(message.id, selectedIndex <= 1 ? null : versions[selectedIndex - 2]!.id)}>
                                 <ChevronLeft className="size-3.5" />
                               </Button>
                               <span className="tabular-nums">{selectedIndex + 1}/{versions.length + 1}</span>
                               <Button type="button" variant="ghost" size="icon" className="size-7 rounded-full"
-                                aria-label="Próxima versão" disabled={busy || versionChanging || selectedIndex >= versions.length}
+                                aria-label="Próxima versão" disabled={busy || versionChanging || deletingMessages || selectedIndex >= versions.length}
                                 onClick={() => void selectResponseVersion(message.id, versions[selectedIndex]!.id)}>
                                 <ChevronRight className="size-3.5" />
                               </Button>
@@ -789,7 +812,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
                                 type="button"
                                 variant="ghost"
                                 size="sm"
-                                disabled={busy || versionChanging || !canGenerateNewVersion}
+                                disabled={busy || versionChanging || deletingMessages || !canGenerateNewVersion}
                                 onClick={() => void regenerateAssistantMessage(message, index)}
                                 className="h-8 rounded-full px-2.5 text-xs text-muted-foreground opacity-100 transition hover:text-foreground sm:opacity-0 sm:group-hover/message:opacity-100"
                               >
@@ -807,7 +830,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
                         type="button"
                         variant="ghost"
                         size="sm"
-                        disabled={busy || versionChanging}
+                        disabled={busy || versionChanging || deletingMessages}
                         onClick={() => void deleteIndividualMessage(message)}
                         className="h-8 rounded-full px-2.5 text-xs text-muted-foreground opacity-100 transition hover:text-destructive sm:opacity-0 sm:group-hover/message:opacity-100"
                       >
@@ -931,7 +954,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
               <PromptInputSubmit
                 status={status}
                 onStop={stop}
-                disabled={versionChanging || (!busy && !input.trim())}
+                disabled={versionChanging || deletingMessages || (!busy && !input.trim())}
                 className="mr-2 size-10 shrink-0 self-center rounded-full bg-chat-action text-primary-foreground hover:bg-chat-action/90"
               />
             </PromptInput>
