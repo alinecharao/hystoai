@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateText, streamText, type ModelMessage } from "ai";
 import type { Database } from "@/integrations/supabase/types";
-import { parseChatDeletion } from "@/lib/chat-validation";
+import { isOptionalUuid, parseChatDeletion } from "@/lib/chat-validation";
 import { serializeUserMessageForModel } from "@/lib/narrative-input";
 
 // Remove only obvious consecutive loops; preserve ordinary literary repetition.
@@ -312,9 +312,9 @@ export const Route = createFileRoute("/api/chat")({
           thoughts?: boolean;
           provider?: AiProvider;
           personaId?: string | null;
-          regenerateMessageId?: string;
+          regenerateMessageId?: string | null;
           clientMessageId?: string;
-          retryMessageId?: string;
+          retryMessageId?: string | null;
         };
         const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         const text = typeof body.text === "string" ? body.text.trim() : "";
@@ -341,10 +341,10 @@ export const Route = createFileRoute("/api/chat")({
         if (previousSend) {
           return json(409, "Este envio já foi registrado. Atualize o histórico antes de tentar novamente.");
         }
-        if (body.retryMessageId !== undefined && (typeof body.retryMessageId !== "string" || !uuidPattern.test(body.retryMessageId))) {
+        if (!isOptionalUuid(body.retryMessageId)) {
           return json(400, "Identificador da mensagem original inválido.");
         }
-        if (body.regenerateMessageId !== undefined && (typeof body.regenerateMessageId !== "string" || !uuidPattern.test(body.regenerateMessageId))) {
+        if (!isOptionalUuid(body.regenerateMessageId)) {
           return json(400, "Identificador da resposta inválido.");
         }
         const regenerating = Boolean(body.regenerateMessageId);
