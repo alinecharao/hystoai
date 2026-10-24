@@ -12,7 +12,9 @@ Depois de `useChat.regenerate()`, os callbacks `onFinish/onError` invalidavam as
 - Regeneração restaura o histórico **recém-buscado**, nunca a variável `initial` do render antigo.
 - Ao apagar mensagem ou conversa, o cliente só altera a UI depois de confirmação do servidor + nova leitura do banco; elimina a exclusão otimista.
 - Exclusão individual e total agora mantêm `sendingLock` e estado visível de exclusão durante toda a operação. Erro de sincronização após exclusão confirmada não é apresentado como falha de exclusão.
-- Testes unitários da conversão: IDs persistidos, duplicatas, reset vazio, imutabilidade.
+- A recuperação consulta um único snapshot das últimas mensagens persistidas, em vez de duas queries conflitantes ou de buscar o histórico inteiro.
+- Se o envio for rejeitado antes de salvar a mensagem do usuário, o rascunho é restaurado no campo de digitação **apenas após confirmar no banco que o UUID não existe**. Se a persistência não puder ser verificada, não induzir reenvio de possível duplicata.
+- Testes unitários da conversão: IDs persistidos, duplicatas, reset vazio, imutabilidade, turno pendente e confirmação de envio por UUID.
 
 ## Teste recomendado no Preview
 1. Na história de teste, enviar duas mensagens e confirmar que cada resposta aparece **uma vez** após atualizar a página.
