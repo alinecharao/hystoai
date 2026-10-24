@@ -23,3 +23,11 @@ export function latestPendingUserTurn<T extends PersistedMessageSnapshot>(rows: 
   const last = rows.at(-1);
   return last?.role === "user" ? last : null;
 }
+
+/**
+ * A client request can fail before INSERT. Only restore a draft after a
+ * successful server read proves its specific user turn was not saved.
+ */
+export function hasPersistedUserTurn(rows: readonly PersistedMessageSnapshot[], clientMessageId: string): boolean {
+  return rows.some((row) => row.id === clientMessageId && row.role === "user");
+}
