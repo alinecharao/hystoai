@@ -5,6 +5,7 @@ import { generateText, streamText, type ModelMessage } from "ai";
 import type { Database } from "@/integrations/supabase/types";
 import { isOptionalUuid, parseChatDeletion } from "@/lib/chat-validation";
 import { serializeUserMessageForModel } from "@/lib/narrative-input";
+import { getGeminiModelCandidates, isGeminiModelUnavailableError } from "@/lib/ai/gemini-models";
 
 // Remove only obvious consecutive loops; preserve ordinary literary repetition.
 function removeGenerationLoops(value: string): string {
@@ -169,11 +170,7 @@ function getProviderConfigs(request: Request): ProviderConfig[] {
           label: "Gemini",
           apiKey: process.env["GEMINI_API_KEY"]!,
           baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
-          models: [
-            process.env["GEMINI_MODEL"] || "gemini-3.8-flash",
-            "gemini-3.5-flash",
-            "gemini-3.1-flash-lite",
-          ],
+          models: getGeminiModelCandidates(process.env["GEMINI_MODEL"], process.env["GEMINI_MODELS"]),
         }
       : null,
     process.env["GROQ_API_KEY"]
@@ -793,6 +790,14 @@ export const Route = createFileRoute("/api/chat")({
               }
 
               lastResponse = response;
+
+              // An unavailable model must not prevent trying other Gemini
+              // candidates. Generic HTTP 400, authentication and moderation
+              // failures are not retryable through this exception.
+              if (provider.id === "gemini" && isGeminiModelUnavailableError(response.status, providerErrorText)) {
+                console.info("hysto_gemini_model_unavailable_try_next", { model });
+                continue;
+              }
 
               if (response.status === 429) {
                 const errorBody = await response.clone().text();
