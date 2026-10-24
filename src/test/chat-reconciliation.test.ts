@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { latestPendingUserTurn, toPersistedChatMessages } from "@/lib/chat-reconciliation";
+import { hasPersistedUserTurn, latestPendingUserTurn, toPersistedChatMessages } from "@/lib/chat-reconciliation";
 
 describe("Authoritative chat recovery", () => {
   it("restores server message IDs rather than temporary regeneration IDs", () => {
@@ -50,5 +50,21 @@ describe("Safe pending response recovery", () => {
 
   it("returns null for empty conversations", () => {
     expect(latestPendingUserTurn([])).toBeNull();
+  });
+});
+
+describe("Unsaved draft safety", () => {
+  it("does not restore a draft if this user's client UUID was saved", () => {
+    expect(hasPersistedUserTurn([
+      { id: "other-id", role: "user", content: "Igual" },
+      { id: "client-123", role: "user", content: "Igual" },
+    ], "client-123")).toBe(true);
+  });
+
+  it("does not confuse identical text or an assistant UUID for a saved user turn", () => {
+    expect(hasPersistedUserTurn([
+      { id: "other-id", role: "user", content: "Igual" },
+      { id: "client-123", role: "assistant", content: "Igual" },
+    ], "client-123")).toBe(false);
   });
 });
