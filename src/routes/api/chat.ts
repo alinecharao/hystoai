@@ -4,6 +4,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { generateText, streamText, type ModelMessage } from "ai";
 import type { Database } from "@/integrations/supabase/types";
 import { parseChatDeletion } from "@/lib/chat-validation";
+import { serializeUserMessageForModel } from "@/lib/narrative-input";
 
 // Remove only obvious consecutive loops; preserve ordinary literary repetition.
 function removeGenerationLoops(value: string): string {
@@ -157,44 +158,6 @@ function buildCharacterPromptSections(character: {
     currentStory,
     styleExamples: explicitStyleExamples,
   };
-}
-
-function serializeUserMessageForModel(content: string) {
-  const trimmed = content.trim();
-  if (!trimmed) return content;
-
-  const blocks: string[] = [];
-  const lines = trimmed.split(/\n+/);
-
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-    if (!line) continue;
-
-    if (/^"[^"]+"$/.test(line)) {
-      blocks.push(
-        `<DIALOGUE speaker="protagonist">\n${line.slice(1, -1).trim()}\n</DIALOGUE>`,
-      );
-      continue;
-    }
-
-    if (/^\[[\s\S]+\]$/.test(line)) {
-      blocks.push(
-        `<MEMORY_OR_DREAM speaker="protagonist">\n${line.slice(1, -1).trim()}\n</MEMORY_OR_DREAM>`,
-      );
-      continue;
-    }
-
-    if (/^\*[^*]+\*$/.test(line)) {
-      blocks.push(
-        `<MENTAL_SPEECH speaker="protagonist">\n${line.slice(1, -1).trim()}\n</MENTAL_SPEECH>`,
-      );
-      continue;
-    }
-
-    blocks.push(`<USER_TEXT>\n${line}\n</USER_TEXT>`);
-  }
-
-  return blocks.join("\n\n");
 }
 
 function getProviderConfigs(request: Request): ProviderConfig[] {
