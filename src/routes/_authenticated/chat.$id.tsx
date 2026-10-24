@@ -202,7 +202,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
       const query = editingPersonaId
         ? supabase.from("personas").update(payload as never).eq("id", editingPersonaId).eq("user_id", user.id)
         : supabase.from("personas").insert(payload as never);
-      const { data, error } = await query.select("id, name, description").single();
+      const { data, error } = await query.select("id, name, description, is_default").single();
       if (error) throw error;
       const saved = data as Persona;
       setPersonas((current) => [...current.filter((p) => p.id !== saved.id), saved]);
