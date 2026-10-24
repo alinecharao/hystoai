@@ -17,3 +17,9 @@ export function toPersistedChatMessages(rows: readonly PersistedMessageSnapshot[
     parts: [{ type: "text" as const, text: row.content }],
   }));
 }
+
+/** Only the newest saved turn can be recovered; never retry older user turns. */
+export function latestPendingUserTurn<T extends PersistedMessageSnapshot>(rows: readonly T[]): T | null {
+  const last = rows.at(-1);
+  return last?.role === "user" ? last : null;
+}
