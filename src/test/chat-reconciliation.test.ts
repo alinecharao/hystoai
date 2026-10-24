@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toPersistedChatMessages } from "@/lib/chat-reconciliation";
+import { latestPendingUserTurn, toPersistedChatMessages } from "@/lib/chat-reconciliation";
 
 describe("Authoritative chat recovery", () => {
   it("restores server message IDs rather than temporary regeneration IDs", () => {
@@ -29,5 +29,26 @@ describe("Authoritative chat recovery", () => {
     const records = [{ id: "u1", role: "user", content: "Teste" }];
     toPersistedChatMessages(records);
     expect(records).toEqual([{ id: "u1", role: "user", content: "Teste" }]);
+  });
+});
+
+describe("Safe pending response recovery", () => {
+  it("returns the newest user turn, never an earlier one", () => {
+    expect(latestPendingUserTurn([
+      { id: "u1", role: "user", content: "Primeira" },
+      { id: "a1", role: "assistant", content: "Resposta" },
+      { id: "u2", role: "user", content: "Última" },
+    ])?.id).toBe("u2");
+  });
+
+  it("does not retry a user turn once an assistant response is saved", () => {
+    expect(latestPendingUserTurn([
+      { id: "u1", role: "user", content: "Primeira" },
+      { id: "a1", role: "assistant", content: "Resposta" },
+    ])).toBeNull();
+  });
+
+  it("returns null for empty conversations", () => {
+    expect(latestPendingUserTurn([])).toBeNull();
   });
 });
