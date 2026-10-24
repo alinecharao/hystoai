@@ -18,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { supabase } from "@/integrations/supabase/client";
 import { activeChatTurnIds } from "@/lib/chat-validation";
-import { toPersistedChatMessages } from "@/lib/chat-reconciliation";
+import { latestPendingUserTurn, toPersistedChatMessages } from "@/lib/chat-reconciliation";
 import lunaPortrait from "@/assets/luna-portrait.jpg";
 import rexPortrait from "@/assets/rex-portrait.jpg";
 import helenaPortrait from "@/assets/helena-portrait.jpg";
@@ -454,29 +454,16 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
     sendingLock.current = true;
     let generationStarted = false;
     try {
-      const { data: latest, error: latestError } = await supabase.from("messages")
-        .select("id, role, content")
-        .eq("character_id", character.id)
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-        .order("id", { ascending: false })
-        .limit(1);
-      if (latestError) throw latestError;
-      const pending = latest?.[0];
-      if (!pending || pending.role !== "user") {
-        await qc.invalidateQueries({ queryKey: ["messages", character.id] });
+      // One server snapshot prevents contradictory latest/history reads.
+      // Limit to the latest window instead of requesting the entire story,
+      // which can exceed the API row cap on very long narratives.
+      const history = await qc.fetchQuery(messagesQuery(character.id));
+      const pending = latestPendingUserTurn(history);
+      if (!pending) {
         setErrorHidden(true);
         alert("Não há mensagem pendente. O histórico foi atualizado.");
         return;
       }
-
-      const { data: history, error: historyError } = await supabase.from("messages")
-        .select("id, role, content")
-        .eq("character_id", character.id)
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: true })
-        .order("id", { ascending: true });
-      if (historyError) throw historyError;
       // Refresh only from persisted data. Do not mutate the SDK chat state
       // immediately before regenerate(): React state updates are asynchronous,
       // and regenerate could otherwise target a stale or unsaved message.
@@ -487,11 +474,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
         .join("");
       if (lastVisible?.id !== pending.id || lastVisible.role !== "user" ||
           visibleText.trim() !== pending.content.trim()) {
-        setMessages((history ?? []).map((item) => ({
-          id: item.id,
-          role: item.role as "user" | "assistant",
-          parts: [{ type: "text" as const, text: item.content }],
-        })));
+        setMessages(toPersistedChatMessages(history));
         alert("O histórico foi sincronizado. Clique novamente para recuperar a resposta.");
         return;
       }
