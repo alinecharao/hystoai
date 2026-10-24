@@ -18,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { supabase } from "@/integrations/supabase/client";
 import { activeChatTurnIds } from "@/lib/chat-validation";
-import { latestPendingUserTurn, toPersistedChatMessages } from "@/lib/chat-reconciliation";
+import { hasPersistedUserTurn, latestPendingUserTurn, toPersistedChatMessages } from "@/lib/chat-reconciliation";
 import lunaPortrait from "@/assets/luna-portrait.jpg";
 import rexPortrait from "@/assets/rex-portrait.jpg";
 import helenaPortrait from "@/assets/helena-portrait.jpg";
@@ -365,11 +365,26 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
     if (sendingLock.current || busy || versionChanging || !text.trim()) return;
     sendingLock.current = true;
     setErrorHidden(true);
-    pendingClientMessageIdRef.current = crypto.randomUUID();
-    void sendMessage({ text }).catch((error) => {
-      sendingLock.current = false;
-      pendingClientMessageIdRef.current = null;
+    const clientMessageId = crypto.randomUUID();
+    pendingClientMessageIdRef.current = clientMessageId;
+    void sendMessage({ text }).catch(async (error) => {
       console.error("chat_send_failed", error);
+      try {
+        const saved = await qc.fetchQuery(messagesQuery(character.id));
+        // Only an unsaved client turn is restored as draft. A saved turn must
+        // remain pending for recovery, never resent as a duplicate.
+        if (!hasPersistedUserTurn(saved, clientMessageId)) {
+          setInput((current) => current.trim() ? current : text);
+        }
+      } catch (syncError) {
+        console.warn("chat_send_verify_failed", syncError);
+        // Unknown persistence status: do not prompt a potentially duplicate send.
+      } finally {
+        if (pendingClientMessageIdRef.current === clientMessageId) {
+          pendingClientMessageIdRef.current = null;
+        }
+        sendingLock.current = false;
+      }
     });
   };
   const readableChatError = useMemo(() => {
