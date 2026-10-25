@@ -20,6 +20,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { supabase } from "@/integrations/supabase/client";
 import { activeChatTurnIds } from "@/lib/chat-validation";
 import { hasPersistedUserTurn, latestPendingUserTurn, toPersistedChatMessages } from "@/lib/chat-reconciliation";
+import type { MemoryMessageSelection } from "@/components/curated-memory-panel";
 import lunaPortrait from "@/assets/luna-portrait.jpg";
 import rexPortrait from "@/assets/rex-portrait.jpg";
 import helenaPortrait from "@/assets/helena-portrait.jpg";
@@ -135,6 +136,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   const [guideDialog, setGuideDialog] = useState(false);
   const [historyDialog, setHistoryDialog] = useState(false);
   const [storyMemoryDialog, setStoryMemoryDialog] = useState(false);
+  const [memorySelectedMessage, setMemorySelectedMessage] = useState<MemoryMessageSelection>(null);
   const [historyPage, setHistoryPage] = useState(0);
   const [historyRows, setHistoryRows] = useState<{ id: string; role: string; content: string }[]>([]);
   const [historyHasMore, setHistoryHasMore] = useState(false);
@@ -669,6 +671,8 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
         </DialogContent>
       </Dialog>
       <StoryMemoryDialog
+        selectedMessage={memorySelectedMessage}
+        onSelectionConsumed={() => setMemorySelectedMessage(null)}
         open={storyMemoryDialog}
         onOpenChange={setStoryMemoryDialog}
         characterId={character.id}
@@ -792,7 +796,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
                 );
 
               return (
-                <div key={message.id} className="group/message">
+                <div key={message.id} className="group/message" data-chat-message={message.id}>
                   <Bubble role={message.role} character={character} showThoughts={showThoughts} text={shownText} />
                   {(
                     <div className={`mt-1 flex flex-wrap items-center gap-1 px-1 ${message.role === "user" ? "justify-end" : "justify-start"}`}>
@@ -837,6 +841,29 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
                             <TooltipContent>{unavailableReason}</TooltipContent>
                           )}
                         </Tooltip>
+                      )}
+                      {stored.some((saved) => saved.id === message.id && saved.role === message.role) && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          disabled={busy || versionChanging || deletingMessages}
+                          className="h-8 rounded-full px-2.5 text-xs text-muted-foreground"
+                          onClick={(event) => {
+                            // A selection is copied only if it belongs to this
+                            // exact message. No whole conversation is stored.
+                            const selection = window.getSelection();
+                            const node = selection?.anchorNode;
+                            const container = event.currentTarget.closest("[data-chat-message]");
+                            const excerpt = node && container?.contains(node)
+                              ? selection?.toString().trim() ?? ""
+                              : "";
+                            setMemorySelectedMessage({ id: message.id, text: excerpt });
+                            setStoryMemoryDialog(true);
+                          }}
+                        >
+                          <Brain className="size-3.5" /> Guardar na memória
+                        </Button>
                       )}
                       <Button
                         type="button"
