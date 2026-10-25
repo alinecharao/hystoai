@@ -30,15 +30,17 @@ export function StoryMemoryDialog({
   characterId,
   userId,
   latestSavedMessageId,
+  responseVersionsEnabled,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   characterId: string;
   userId: string;
   latestSavedMessageId: string | null;
+  responseVersionsEnabled: boolean;
 }) {
   const { data, isPending, error, refetch, isFetching } = useQuery({
-    queryKey: ["story-memory", characterId, userId],
+    queryKey: ["story-memory", characterId, userId, responseVersionsEnabled],
     enabled: open,
     staleTime: 0,
     queryFn: async (): Promise<StoryMemoryRow | null> => {
@@ -48,6 +50,29 @@ export function StoryMemoryDialog({
         .eq("user_id", userId)
         .maybeSingle();
       if (error) throw error;
+      if (!data?.last_processed_message_id) return null;
+      // A cleared/new story or deleted checkpoint must never display
+      // continuity facts from a past conversation with the same character.
+      const { data: anchor, error: anchorError } = await supabase.from("messages")
+        .select("id, role")
+        .eq("id", data.last_processed_message_id)
+        .eq("user_id", userId)
+        .eq("character_id", characterId)
+        .maybeSingle();
+      if (anchorError) throw anchorError;
+      if (anchor?.role !== "assistant") return null;
+      if (responseVersionsEnabled) {
+        const { data: discardedOriginal, error: versionError } = await supabase
+          .from("assistant_response_versions")
+          .select("id")
+          .eq("assistant_message_id", anchor.id)
+          .eq("user_id", userId)
+          .eq("character_id", characterId)
+          .eq("is_selected", true)
+          .maybeSingle();
+        if (versionError) throw versionError;
+        if (discardedOriginal) return null;
+      }
       return data;
     },
   });
