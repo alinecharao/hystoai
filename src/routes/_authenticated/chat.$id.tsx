@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
-import { Brain, ChevronLeft, ChevronRight, Ellipsis, Info, Pencil, RotateCcw, Trash2, UserRound, X } from "lucide-react";
+import { Brain, ChevronLeft, ChevronRight, Download, Ellipsis, FileJson, Info, Pencil, RotateCcw, Trash2, UserRound, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Conversation, ConversationContent, ConversationScrollButton } from "@/components/ai-elements/conversation";
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
@@ -20,6 +20,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { supabase } from "@/integrations/supabase/client";
 import { activeChatTurnIds } from "@/lib/chat-validation";
 import { readDraft, saveDraft } from "@/lib/chat-drafts";
+import { readStoryExport, saveStoryExportFile } from "@/lib/story-export";
 import { hasPersistedUserTurn, latestPendingUserTurn, toPersistedChatMessages } from "@/lib/chat-reconciliation";
 import type { MemoryMessageSelection } from "@/components/curated-memory-panel";
 import lunaPortrait from "@/assets/luna-portrait.jpg";
@@ -129,6 +130,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   const [versionViewerMessageId, setVersionViewerMessageId] = useState<string | null>(null);
   const [versionChanging, setVersionChanging] = useState(false);
   const [deletingMessages, setDeletingMessages] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [input, setInput] = useState("");
   const [draftLoaded, setDraftLoaded] = useState(false);
   const sendingLock = useRef(false);
@@ -419,6 +421,23 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   }, [error]);
   const visibleMessageStart = Math.max(0, messages.length - visibleCount);
   const visibleMessages = messages.slice(visibleMessageStart);
+
+  async function exportChat(format: "txt" | "json") {
+    if (exporting || busy || versionChanging || deletingMessages || sendingLock.current) return;
+    setExporting(true);
+    try {
+      const snapshot = await readStoryExport(user.id, { id: character.id, name: character.name });
+      if (!snapshot.messages.length) {
+        window.alert("Esta conversa ainda não possui mensagens salvas para exportar.");
+        return;
+      }
+      saveStoryExportFile(snapshot, format);
+    } catch (exportError) {
+      window.alert(exportError instanceof Error ? exportError.message : "Não foi possível exportar a história.");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   async function deletePersistedMessages(options: { all?: boolean; messageId?: string }) {
     const { data } = await supabase.auth.getSession();
@@ -759,6 +778,8 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
               <DropdownMenuItem onSelect={() => setOpenInfo(true)}><Info /> Ver personagem</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => { setHistoryDialog(true); void loadHistoryPage(0); }}><RotateCcw /> Ver mensagens desde o início</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => setStoryMemoryDialog(true)}><Brain /> Memória da história</DropdownMenuItem>
+              <DropdownMenuItem disabled={exporting || busy || deletingMessages || versionChanging} onSelect={() => void exportChat("txt")}><Download /> {exporting ? "Exportando..." : "Exportar história (.txt)"}</DropdownMenuItem>
+              <DropdownMenuItem disabled={exporting || busy || deletingMessages || versionChanging} onSelect={() => void exportChat("json")}><FileJson /> Exportar backup completo (.json)</DropdownMenuItem>
               {character.user_id === user.id && (
                 <DropdownMenuItem asChild><Link to="/characters/$id/edit" params={{ id: character.id }}><Pencil /> Editar personagem</Link></DropdownMenuItem>
               )}
