@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { classifyMemoryCheckpoint, type BootstrapStatus } from "@/lib/story-memory-bootstrap";
+import { CuratedMemoryPanel, type MemoryMessageSelection } from "@/components/curated-memory-panel";
 
 type MemoryLookup = { status: BootstrapStatus; memory: StoryMemoryRow | null };
 
@@ -36,6 +37,8 @@ export function StoryMemoryDialog({
   latestSavedMessageId,
   responseVersionsEnabled,
   latestSavedRole,
+  selectedMessage,
+  onSelectionConsumed,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -44,6 +47,8 @@ export function StoryMemoryDialog({
   latestSavedMessageId: string | null;
   responseVersionsEnabled: boolean;
   latestSavedRole: string | null;
+  selectedMessage: MemoryMessageSelection;
+  onSelectionConsumed: () => void;
 }) {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -121,10 +126,19 @@ export function StoryMemoryDialog({
       <DialogContent className="flex max-h-[85dvh] w-[calc(100%-2rem)] max-w-xl flex-col overflow-hidden">
         <DialogTitle className="flex items-center gap-2"><Brain className="size-5" /> Memória da história</DialogTitle>
         <DialogDescription>
-          Resumo automático desta conversa. Informações não confirmadas pelo histórico não devem ser tratadas como fatos.
-          Esta visualização não edita suas mensagens.
+          Escolha os fatos que merecem ser lembrados. As notas manuais são salvas sem usar IA;
+          resumos automáticos são opcionais e podem consumir créditos.
         </DialogDescription>
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto py-2">
+          <CuratedMemoryPanel
+            open={open}
+            characterId={characterId}
+            userId={userId}
+            selectedMessage={selectedMessage}
+            onSelectionConsumed={onSelectionConsumed}
+          />
+          <div className="border-t border-border/60 pt-3">
+            <h3 className="mb-2 text-sm font-semibold">Resumo automático (opcional, usa IA)</h3>
           {isPending && <p className="text-sm text-muted-foreground">Carregando memória...</p>}
           {error && <p className="text-sm text-destructive">Não foi possível ler a memória. A história foi preservada.</p>}
           {!isPending && !error && needsBootstrap && (
@@ -154,12 +168,13 @@ export function StoryMemoryDialog({
               </p>
             </>
           )}
+          </div>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           {needsBootstrap && (
             <Button type="button" size="sm" disabled={creating || isFetching || latestSavedRole !== "assistant"}
               onClick={() => void generateMemory()}>
-              <Brain className="size-4" /> {creating ? "Criando memória..." : "Criar memória recente"}
+              <Brain className="size-4" /> {creating ? "Criando memória..." : "Gerar resumo com IA"}
             </Button>
           )}
           <Button type="button" variant="outline" size="sm" disabled={isFetching || creating}
