@@ -8,6 +8,7 @@ import { Conversation, ConversationContent, ConversationScrollButton } from "@/c
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
 import { PromptInput, PromptInputSubmit, PromptInputTextarea } from "@/components/ai-elements/prompt-input";
 import { Shimmer } from "@/components/ai-elements/shimmer";
+import { StoryMemoryDialog } from "@/components/story-memory-dialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -133,6 +134,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   const [openInfo, setOpenInfo] = useState(false);
   const [guideDialog, setGuideDialog] = useState(false);
   const [historyDialog, setHistoryDialog] = useState(false);
+  const [storyMemoryDialog, setStoryMemoryDialog] = useState(false);
   const [historyPage, setHistoryPage] = useState(0);
   const [historyRows, setHistoryRows] = useState<{ id: string; role: string; content: string }[]>([]);
   const [historyHasMore, setHistoryHasMore] = useState(false);
@@ -666,6 +668,13 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
           </div>
         </DialogContent>
       </Dialog>
+      <StoryMemoryDialog
+        open={storyMemoryDialog}
+        onOpenChange={setStoryMemoryDialog}
+        characterId={character.id}
+        userId={user.id}
+        latestSavedMessageId={stored[stored.length - 1]?.id ?? null}
+      />
       <Dialog open={guideDialog} onOpenChange={setGuideDialog}>
         <DialogContent className="max-h-[85dvh] w-[calc(100%-2rem)] max-w-lg overflow-y-auto rounded-2xl p-5 sm:p-6">
           <DialogTitle className="text-xl">Guie a sua história</DialogTitle>
@@ -729,6 +738,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
             <DropdownMenuContent align="end" className="w-52">
               <DropdownMenuItem onSelect={() => setOpenInfo(true)}><Info /> Ver personagem</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => { setHistoryDialog(true); void loadHistoryPage(0); }}><RotateCcw /> Ver mensagens desde o início</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setStoryMemoryDialog(true)}><Brain /> Memória da história</DropdownMenuItem>
               {character.user_id === user.id && (
                 <DropdownMenuItem asChild><Link to="/characters/$id/edit" params={{ id: character.id }}><Pencil /> Editar personagem</Link></DropdownMenuItem>
               )}
