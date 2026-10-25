@@ -6,8 +6,8 @@ const exportSample: StoryExport = {
   exported_at: "2026-10-24T18:00:00.000Z",
   character: { id: "chr", name: "Christopher Willians" },
   messages: [
-    { id: "u1", role: "user", content: "Minha fala", created_at: "2026-10-24T18:00:00Z" },
-    { id: "a1", role: "assistant", content: "Texto original", created_at: "2026-10-24T18:00:01Z" },
+    { id: "u1", role: "user", content: "Minha fala", created_at: "2026-10-24T18:00:00Z", reply_to_message_id: null, client_message_id: "u1" },
+    { id: "a1", role: "assistant", content: "Texto original", created_at: "2026-10-24T18:00:01Z", reply_to_message_id: "u1", client_message_id: null },
   ],
   assistant_versions: [
     { id: "v1", assistant_message_id: "a1", content: "Versão descartada", is_selected: false, created_at: "2026-10-24T18:00:02Z" },
