@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { supabase } from "@/integrations/supabase/client";
 import { activeChatTurnIds } from "@/lib/chat-validation";
+import { readDraft, saveDraft } from "@/lib/chat-drafts";
 import { hasPersistedUserTurn, latestPendingUserTurn, toPersistedChatMessages } from "@/lib/chat-reconciliation";
 import type { MemoryMessageSelection } from "@/components/curated-memory-panel";
 import lunaPortrait from "@/assets/luna-portrait.jpg";
@@ -129,6 +130,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   const [versionChanging, setVersionChanging] = useState(false);
   const [deletingMessages, setDeletingMessages] = useState(false);
   const [input, setInput] = useState("");
+  const draftHydrated = useRef(false);
   const sendingLock = useRef(false);
   const [visibleCount, setVisibleCount] = useState(15);
   const [showThoughts, setShowThoughts] = useState(true);
@@ -157,6 +159,18 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   const aiProviderRef = useRef<AiProvider>(aiProvider);
   thoughtsRef.current = showThoughts;
   aiProviderRef.current = aiProvider;
+
+  useEffect(() => {
+    // Read first, then persist subsequent edits. The initial empty render
+    // must not overwrite the draft before React applies the restored value.
+    setInput(readDraft(window.localStorage, user.id, character.id));
+    draftHydrated.current = true;
+  }, [user.id, character.id]);
+
+  useEffect(() => {
+    if (!draftHydrated.current) return;
+    saveDraft(window.localStorage, user.id, character.id, input);
+  }, [input, user.id, character.id]);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("hysto-ai-provider");
