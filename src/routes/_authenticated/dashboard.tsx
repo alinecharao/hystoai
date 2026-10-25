@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useRouteContext } from "@tanstack/react-router";
-import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { Compass, Plus, Search, Sparkles, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import lunaPortrait from "@/assets/luna-portrait.jpg";
@@ -33,13 +33,40 @@ export function Catalog({ mineOnly = false }: { mineOnly?: boolean }) {
   const [activeTab, setActiveTab] = useState<"all" | "mine" | "recent">("all");
   const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const featured = mine[0];
+  const characterIds = useMemo(() => data.map((character) => character.id), [data]);
+  const { data: recentIds = [], isPending: recentPending } = useQuery({
+    queryKey: ["character-recent-activity", user.id, characterIds.join("|")],
+    staleTime: 120_000,
+    queryFn: async (): Promise<string[]> => {
+      const activity: { id: string; timestamp: string }[] = [];
+      // Query only the most recent timestamp for each character. Reading a
+      // global 500-message window would falsely hide older conversations when
+      // one very active chat fills that entire window.
+      for (let offset = 0; offset < characterIds.length; offset += 5) {
+        const batch = await Promise.all(characterIds.slice(offset, offset + 5).map(async (id) => {
+          const { data: last, error } = await supabase.from("messages")
+            .select("created_at").eq("user_id", user.id).eq("character_id", id)
+            .order("created_at", { ascending: false }).order("id", { ascending: false })
+            .limit(1).maybeSingle();
+          if (error) throw error;
+          return last ? { id, timestamp: last.created_at } : null;
+        }));
+        activity.push(...batch.filter((item): item is { id: string; timestamp: string } => item !== null));
+      }
+      return activity.sort((a, b) => b.timestamp.localeCompare(a.timestamp)).map((item) => item.id);
+    },
+  });
+  const recents = useMemo(
+    () => recentIds.map((id) => data.find((character) => character.id === id)).filter((item): item is Character => Boolean(item)),
+    [recentIds, data],
+  );
+  const featured = recents[0] ?? mine[0];
   const visible = useMemo(() => {
-    const selected = mineOnly ? mine : activeTab === "mine" ? mine : activeTab === "recent" ? data.slice(0, 6) : [...mine, ...presets];
+    const selected = mineOnly ? mine : activeTab === "mine" ? mine : activeTab === "recent" ? recents : [...mine, ...presets];
     const query = search.trim().toLocaleLowerCase("pt-BR");
     if (!query) return selected;
     return selected.filter((character) => [character.name, character.description, character.gender, ...character.tags].join(" ").toLocaleLowerCase("pt-BR").includes(query));
-  }, [activeTab, data, mine, mineOnly, presets, search]);
+  }, [activeTab, data, mine, mineOnly, presets, recents, search]);
 
   return (
     <div className="h-full overflow-y-auto bg-background">
@@ -72,7 +99,7 @@ export function Catalog({ mineOnly = false }: { mineOnly?: boolean }) {
         {!mineOnly && featured && (
           <section className="mt-7">
             <div className="mb-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-1">
-              <h2 className="truncate text-sm font-semibold">Continue sua história</h2>
+              <h2 className="truncate text-sm font-semibold">{recents.length ? "Continue sua história" : "Seu personagem"}</h2>
               <span className="text-xs text-muted-foreground">Seus personagens</span>
             </div>
             <Link
@@ -96,13 +123,17 @@ export function Catalog({ mineOnly = false }: { mineOnly?: boolean }) {
           <Tab active={activeTab === "recent"} onClick={() => setActiveTab("recent")}>Mais recentes</Tab>
         </nav>}
 
-        {visible.length > 0 ? (
+        {!mineOnly && activeTab === "recent" && recentPending ? (
+          <div className="grid min-h-48 place-items-center text-center">
+            <p className="text-sm text-muted-foreground">Organizando suas histórias recentes...</p>
+          </div>
+        ) : visible.length > 0 ? (
           <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
             {visible.map((character) => <CharacterCard key={character.id} character={character} editable={character.user_id === user.id} />)}
           </div>
         ) : (
           <div className="grid min-h-64 place-items-center text-center">
-            <div><Compass className="mx-auto mb-3 size-7 text-primary" /><p className="text-sm text-muted-foreground">Você ainda não criou personagens.</p></div>
+            <div><Compass className="mx-auto mb-3 size-7 text-primary" /><p className="text-sm text-muted-foreground">{activeTab === "recent" ? "Nenhuma conversa iniciada ainda." : "Você ainda não criou personagens."}</p></div>
           </div>
         )}
       </div>
