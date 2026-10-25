@@ -1,6 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 
-export type ExportMessage = { id: string; role: string; content: string; created_at: string };
+export type ExportMessage = { id: string; role: string; content: string; created_at: string; reply_to_message_id: string | null; client_message_id: string | null };
 export type ExportVersion = { id: string; assistant_message_id: string; content: string; is_selected: boolean; created_at: string };
 export type ExportNote = { id: string; category: string; body: string; source_message_id: string | null };
 export type StoryExport = {
@@ -24,7 +24,7 @@ export async function readStoryExport(
   const messages: ExportMessage[] = [];
   for (let page = 0; page < MAX_PAGES; page++) {
     const { data, error } = await supabase.from("messages")
-      .select("id, role, content, created_at")
+      .select("id, role, content, created_at, reply_to_message_id, client_message_id")
       .eq("user_id", userId).eq("character_id", character.id)
       .lte("created_at", snapshotAt)
       .order("created_at", { ascending: true })
@@ -104,6 +104,8 @@ export function saveStoryExportFile(snapshot: StoryExport, format: "txt" | "json
   const element = document.createElement("a");
   element.href = url;
   element.download = `hysto-${safeName}-${snapshot.exported_at.slice(0, 10)}.${format}`;
+  document.body.appendChild(element);
   element.click();
+  element.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
