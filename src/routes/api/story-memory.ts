@@ -151,7 +151,8 @@ export const Route = createFileRoute("/api/story-memory")({
           for (const candidate of candidates) {
             try {
               const ai = createOpenAI({
-                apiKey: candidate.apiKey, baseURL: candidate.baseURL, headers: candidate.headers,
+                apiKey: candidate.apiKey, baseURL: candidate.baseURL,
+                ...(candidate.headers ? { headers: candidate.headers } : {}),
               });
               const result = await generateText({
                 model: ai.chat(candidate.model),
