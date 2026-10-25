@@ -5,6 +5,7 @@ import { generateText, streamText, type ModelMessage } from "ai";
 import type { Database } from "@/integrations/supabase/types";
 import { isOptionalUuid, parseChatDeletion } from "@/lib/chat-validation";
 import { serializeUserMessageForModel } from "@/lib/narrative-input";
+import { buildStoryMemoryHistory, readStoryMemoryJson, selectSafeStoryMemory, type StoryMemorySnapshot } from "@/lib/story-memory";
 import { getGeminiModelCandidates, isGeminiModelUnavailableError } from "@/lib/ai/gemini-models";
 
 // Remove only obvious consecutive loops; preserve ordinary literary repetition.
@@ -405,7 +406,7 @@ export const Route = createFileRoute("/api/chat")({
 
         // A memória é complementar: ausência da tabela ou falha de leitura não bloqueia o chat.
         // O campo de fundo original e as mensagens permanecem inalterados.
-        let storyMemory: { summary: string; scene: string; known_facts: string; last_processed_message_id?: string | null } | null = null;
+        let storyMemory: StoryMemorySnapshot | null = null;
         try {
           const { data, error } = await supabase
             .from("story_memories")
@@ -416,7 +417,7 @@ export const Route = createFileRoute("/api/chat")({
           if (error) {
             console.warn("story_memory_read_unavailable", { code: error.code });
           } else if (data) {
-            storyMemory = data as { summary: string; scene: string; known_facts: string; last_processed_message_id?: string | null };
+            storyMemory = data as StoryMemorySnapshot;
           }
         } catch (error) {
           console.warn("story_memory_read_failed", error);
@@ -497,24 +498,53 @@ export const Route = createFileRoute("/api/chat")({
           .map((item) => item.role === "assistant" && selectedVersions.has(item.id)
             ? { ...item, content: selectedVersions.get(item.id)! }
             : item);
-        // The checkpoint might describe an alternative that was not selected.
-        // Do not inject stale scene/facts from that checkpoint into a new branch.
-        if (storyMemory?.last_processed_message_id &&
-            (selectedVersions.has(storyMemory.last_processed_message_id) ||
-             (regenerating && storyMemory.last_processed_message_id === body.regenerateMessageId))) {
-          storyMemory = null;
+        // The saved checkpoint may predate the 80-message API window.
+        // Verify its source row directly before retaining historical facts.
+        // A selected alternate of the checkpoint itself invalidates that
+        // summary because it may contain discarded narrative events.
+        const checkpointId = storyMemory?.last_processed_message_id;
+        const markerIndex = full.findIndex((item) => item.id === checkpointId);
+        let checkpointExists = markerIndex >= 0 && full[markerIndex]?.role === "assistant";
+        let checkpointHasAlternative = Boolean(checkpointId && (
+          selectedVersions.has(checkpointId) ||
+          (regenerating && checkpointId === body.regenerateMessageId)
+        ));
+        if (checkpointId && markerIndex < 0) {
+          const { data: anchor, error: anchorError } = await supabase
+            .from("messages")
+            .select("id, role")
+            .eq("id", checkpointId)
+            .eq("character_id", character.id)
+            .eq("user_id", userId)
+            .maybeSingle();
+          if (anchorError) {
+            console.warn("story_memory_checkpoint_read_failed", { code: anchorError.code });
+          } else if (anchor?.role === "assistant") {
+            checkpointExists = true;
+            if (process.env["HYSTO_RESPONSE_VERSIONS"] === "true") {
+              const { data: selectedAnchor, error: selectedAnchorError } = await supabase
+                .from("assistant_response_versions")
+                .select("id")
+                .eq("assistant_message_id", checkpointId)
+                .eq("character_id", character.id)
+                .eq("user_id", userId)
+                .eq("is_selected", true)
+                .maybeSingle();
+              // If selected version state cannot be validated, fail closed.
+              checkpointHasAlternative = Boolean(selectedAnchor) || Boolean(selectedAnchorError);
+            }
+          }
         }
-        // A newly started story must not inherit a saved memory checkpoint.
-        // Only trust memory when its checkpoint belongs to this character\u0027s actual history.
-        if (full.length === 0 || !storyMemory?.last_processed_message_id || !full.some((m) => m.id === storyMemory?.last_processed_message_id)) {
-          storyMemory = null;
-        }
-        const memoryMarkerIndex = full.findIndex((m) => m.id === storyMemory?.last_processed_message_id);
-        const turnsSinceMemory = memoryMarkerIndex < 0 ? Infinity : full.length - memoryMarkerIndex - 1;
-        // Old scene descriptions must NEVER be passed as the current scene.
-        // Keep durable summary only when its checkpoint still exists and is reasonably recent.
-        if (turnsSinceMemory > 24) storyMemory = null;
-        else if (turnsSinceMemory > 0 && storyMemory) storyMemory = { ...storyMemory, scene: "" };
+        const turnsAfterCheckpoint = markerIndex >= 0
+          ? full.length - markerIndex - 1
+          : null;
+        // Durable facts survive long timelines; stale scenes never do.
+        storyMemory = selectSafeStoryMemory(
+          storyMemory,
+          checkpointExists,
+          checkpointHasAlternative,
+          turnsAfterCheckpoint,
+        );
 
         // Never trust persona text from the browser: fetch the selected persona
         // from the authenticated user's own records.
@@ -837,13 +867,14 @@ export const Route = createFileRoute("/api/chat")({
         // Atualização periódica e não crítica: a conversa é sempre salva primeiro.
         // Falhas, limites e respostas inválidas da memória nunca falham o chat.
         const updateStoryMemory = async (assistantReply: string, assistantMessageId: string) => {
-          // Recovery reuses an existing pending user turn: include it once.
-          const historicalTurns = retrying ? full.filter((item) => item.id !== body.retryMessageId) : full;
-          const completeHistory = [...historicalTurns, { role: "user", content: text }, { role: "assistant", content: assistantReply }];
-          // Atualizar a cada 8 turnos, priorizando o contexto mais recente.
-          // A atualização é baseada no contexto recente + resumo anterior, sem reescrever o fundo.
-          const assistantCount = completeHistory.filter((m) => m.role === "assistant").length;
-          // Refresh on every assistant turn so scene transitions do not remain frozen.
+          // The current user turn is already stored by the POST endpoint,
+          // except during a recovery where it is reused. Never feed it twice.
+          const latestUserId = retrying ? body.retryMessageId! : clientMessageId;
+          const completeHistory = buildStoryMemoryHistory(
+            full,
+            { id: latestUserId, role: "user", content: text },
+            { id: assistantMessageId, role: "assistant", content: assistantReply },
+          );
 
           try {
             const memoryPrompt = [
@@ -851,9 +882,12 @@ export const Route = createFileRoute("/api/chat")({
               "Atualize a memória de UMA história. Preserve fatos estabelecidos, evite inventar e diferencie narração privada do que cada personagem realmente sabe.",
               "Não atribua pensamentos, murmúrios não ouvidos ou acontecimentos fora da cena a personagens que não os presenciaram.",
               "Retorne APENAS JSON válido com três campos string: summary, scene, known_facts.",
-              "summary: apenas fatos duradouros, idades, datas, marcos cronológicos e relações explicitamente confirmadas. Preserve a ordem dos acontecimentos e diferenças de idade. Não inclua ESTADO DA CENA, horário, local momentâneo, objetivos imediatos nem pendências transitórias.",
-              "scene: SOMENTE o instante mais recente no fim do histórico, com local, presentes, ações em curso e pendências. Substitua inteiramente a cena anterior; nunca copie a cena antiga se os acontecimentos avançaram.",
-              "known_facts: separe explicitamente o que CADA personagem sabe e COMO descobriu (presenciou, ouviu ou foi informado). Não registre como conhecido um fato apenas narrado ao leitor, pensamento privado, sonho de outro personagem ou acontecimento fora da presença. Se a origem for incerta, não inclua como conhecimento confirmado.",
+              "summary: fatos duradouros e verificáveis, organizados sucintamente por IDENTIDADES E VÍNCULOS, LINHA DO TEMPO e MARCOS ESTABELECIDOS. Preserve idades, diferenças de idade, datas e causa/efeito. Só registre namoro, casamento, parentesco, profissão e mudanças de local como confirmados se o histórico confirmar. Não inclua pendências nem cenas transitórias.",
+              "scene: descreva SOMENTE o instante final do histórico, com local e tempo narrativo, presentes, ações em curso e pendências. Nunca copie uma cena anterior se a última mensagem mudou o local ou o momento. Se faltarem evidências, use uma string vazia.",
+              "known_facts: por personagem, registre apenas o que ele PRESENCIOU, OUVIU ou RECEBEU em mensagem/fala acessível, explicando a origem. Marque fatos privados do leitor como NÃO CONHECIDOS pelos demais. Sonhos, pensamentos, segredos, sussurros não ouvidos e fatos fora da cena não são fontes de conhecimento.",
+              "CITAÇÃO DE ORIGEM: o histórico fornecido tem IDs de mensagens. Para novas afirmações importantes (especialmente relações, idades, datas e informações conhecidas), inclua o ID de uma mensagem que as sustente, quando presente no histórico. Nunca invente IDs, eventos ou justificativas. Dados anteriores herdados de MEMÓRIA ANTERIOR devem permanecer identificados como anteriores, sem atribuir uma nova fonte inexistente.",
+              "CRONOLOGIA: não transforme episódios hipotéticos, sonhos ou flashbacks em acontecimentos da cena atual. Não invente anos, aniversários, diferença de idade, origem de poderes nem tempo decorrido. Quando houver contradição, mantenha somente o que puder confirmar; nunca ajuste datas para encaixar uma narrativa.",
+              "VERSÕES DE RESPOSTA: apenas a versão selecionada apresentada no histórico é fato narrativo. Nunca restabeleça detalhes de uma alternativa descartada.",
               "Se o histórico não sustentar a cena atual, deixe scene vazio em vez de inventar ou reutilizar a anterior.",
               "Não crie fatos; se houver dúvida, omita. Cada campo deve ter no máximo 2400 caracteres.",
               `MEMÓRIA ANTERIOR: ${JSON.stringify(storyMemory ?? {})}`,
@@ -868,11 +902,11 @@ export const Route = createFileRoute("/api/chat")({
               maxRetries: 0,
               abortSignal: AbortSignal.timeout(12000),
             });
-            const raw = updated.text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-            const parsed: unknown = JSON.parse(raw);
-            if (!parsed || typeof parsed !== "object") return;
-            const fields = parsed as Record<string, unknown>;
-            if (!["summary", "scene", "known_facts"].every((field) => typeof fields[field] === "string" && (fields[field] as string).length <= 2400)) return;
+            const fields = readStoryMemoryJson(updated.text);
+            if (!fields) {
+              console.warn("story_memory_invalid_model_output");
+              return;
+            }
             // Memory generation is asynchronous. A newer assistant turn may have
             // completed while this summary was being generated. Never let an
             // older summary overwrite the continuity of a newer scene.
