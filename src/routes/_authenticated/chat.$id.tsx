@@ -130,7 +130,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   const [versionChanging, setVersionChanging] = useState(false);
   const [deletingMessages, setDeletingMessages] = useState(false);
   const [input, setInput] = useState("");
-  const draftHydrated = useRef(false);
+  const [draftLoaded, setDraftLoaded] = useState(false);
   const sendingLock = useRef(false);
   const [visibleCount, setVisibleCount] = useState(15);
   const [showThoughts, setShowThoughts] = useState(true);
@@ -164,13 +164,13 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
     // Read first, then persist subsequent edits. The initial empty render
     // must not overwrite the draft before React applies the restored value.
     setInput(readDraft(window.localStorage, user.id, character.id));
-    draftHydrated.current = true;
+    setDraftLoaded(true);
   }, [user.id, character.id]);
 
   useEffect(() => {
-    if (!draftHydrated.current) return;
+    if (!draftLoaded) return;
     saveDraft(window.localStorage, user.id, character.id, input);
-  }, [input, user.id, character.id]);
+  }, [input, user.id, character.id, draftLoaded]);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("hysto-ai-provider");
