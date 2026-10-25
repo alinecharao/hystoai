@@ -269,6 +269,57 @@ export type Database = {
         }
         Relationships: []
       }
+      story_memory_notes: {
+        Row: {
+          id: string
+          user_id: string
+          character_id: string
+          anchor_message_id: string
+          source_message_id: string | null
+          category: "fact" | "timeline" | "knowledge" | "private"
+          body: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id?: string
+          character_id: string
+          anchor_message_id: string
+          source_message_id?: string | null
+          category: "fact" | "timeline" | "knowledge" | "private"
+          body: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          character_id?: string
+          anchor_message_id?: string
+          source_message_id?: string | null
+          category?: "fact" | "timeline" | "knowledge" | "private"
+          body?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "story_memory_notes_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "story_memory_notes_source_message_id_fkey"
+            columns: ["source_message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       story_memories: {
         Row: {
           character_id: string
