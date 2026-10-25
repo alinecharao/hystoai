@@ -674,6 +674,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
         characterId={character.id}
         userId={user.id}
         latestSavedMessageId={stored[stored.length - 1]?.id ?? null}
+        responseVersionsEnabled={responseVersionsEnabled}
       />
       <Dialog open={guideDialog} onOpenChange={setGuideDialog}>
         <DialogContent className="max-h-[85dvh] w-[calc(100%-2rem)] max-w-lg overflow-y-auto rounded-2xl p-5 sm:p-6">
