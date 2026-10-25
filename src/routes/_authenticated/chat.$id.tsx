@@ -23,6 +23,10 @@ import { readDraft, saveDraft } from "@/lib/chat-drafts";
 import { readStoryExport, saveStoryExportFile } from "@/lib/story-export";
 import { hasPersistedUserTurn, latestPendingUserTurn, toPersistedChatMessages } from "@/lib/chat-reconciliation";
 import type { MemoryMessageSelection } from "@/components/curated-memory-panel";
+import {
+  CHARACTER_KNOWLEDGE_LABELS, DEFAULT_CHARACTER_KNOWLEDGE_MODE,
+  characterKnowledgeStorageKey, parseCharacterKnowledgeMode, type CharacterKnowledgeMode,
+} from "@/lib/character-knowledge";
 import lunaPortrait from "@/assets/luna-portrait.jpg";
 import rexPortrait from "@/assets/rex-portrait.jpg";
 import helenaPortrait from "@/assets/helena-portrait.jpg";
@@ -147,6 +151,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [aiProvider, setAiProvider] = useState<AiProvider>("auto");
+  const [knowledgeMode, setKnowledgeMode] = useState<CharacterKnowledgeMode>(DEFAULT_CHARACTER_KNOWLEDGE_MODE);
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [personaId, setPersonaId] = useState("none");
   const [personaDialog, setPersonaDialog] = useState(false);
@@ -159,8 +164,10 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   const [errorHidden, setErrorHidden] = useState(false);
   const thoughtsRef = useRef(showThoughts);
   const aiProviderRef = useRef<AiProvider>(aiProvider);
+  const knowledgeModeRef = useRef<CharacterKnowledgeMode>(knowledgeMode);
   thoughtsRef.current = showThoughts;
   aiProviderRef.current = aiProvider;
+  knowledgeModeRef.current = knowledgeMode;
 
   useEffect(() => {
     // Read first, then persist subsequent edits. The initial empty render
@@ -184,6 +191,27 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   const changeAiProvider = (value: AiProvider) => {
     setAiProvider(value);
     window.localStorage.setItem("hysto-ai-provider", value);
+  };
+
+  useEffect(() => {
+    try {
+      setKnowledgeMode(parseCharacterKnowledgeMode(
+        window.localStorage.getItem(characterKnowledgeStorageKey(user.id, character.id)),
+      ));
+    } catch {
+      setKnowledgeMode(DEFAULT_CHARACTER_KNOWLEDGE_MODE);
+    }
+  }, [user.id, character.id]);
+
+  const changeKnowledgeMode = (value: string) => {
+    const next = parseCharacterKnowledgeMode(value);
+    knowledgeModeRef.current = next;
+    setKnowledgeMode(next);
+    try {
+      window.localStorage.setItem(characterKnowledgeStorageKey(user.id, character.id), next);
+    } catch {
+      // Private/incognito browser storage may be unavailable.
+    }
   };
   const image = characterImage(character);
 
@@ -318,6 +346,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
             text,
             thoughts: thoughtsRef.current,
             provider: aiProviderRef.current,
+            knowledgeMode: knowledgeModeRef.current,
             personaId: personaIdRef.current === "none" ? null : personaIdRef.current,
             clientMessageId: pendingClientMessageIdRef.current,
             ...activeChatTurnIds(regenerateIdRef.current, retryMessageIdRef.current),
@@ -989,6 +1018,21 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
                   <SelectItem value="openrouter">OpenRouter</SelectItem>
                   <SelectItem value="kimi">Kimi</SelectItem>
                   <SelectItem value="openai">OpenAI</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={knowledgeMode} onValueChange={changeKnowledgeMode} disabled={busy || versionChanging || deletingMessages}>
+                <SelectTrigger
+                  className="h-8 w-[168px] shrink-0 rounded-full border-primary/35 bg-chat-glass px-3 text-xs"
+                  aria-label="Repertório de conhecimentos do personagem"
+                  title="Define o quanto o personagem conhece referências, não o que a IA consegue pesquisar"
+                >
+                  <Brain className="mr-1 size-3.5 shrink-0" />
+                  <SelectValue>{CHARACTER_KNOWLEDGE_LABELS[knowledgeMode]}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cautious">Cauteloso — evita presumir</SelectItem>
+                  <SelectItem value="natural">Natural — repertório plausível</SelectItem>
+                  <SelectItem value="established">Só estabelecido — rigoroso</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={personaId} onValueChange={selectPersona} disabled={busy}>
