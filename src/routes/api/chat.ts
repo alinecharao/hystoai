@@ -9,6 +9,7 @@ import { buildStoryMemoryHistory, readStoryMemoryJson, selectSafeStoryMemory, ty
 import { getGeminiModelCandidates, isGeminiModelUnavailableError } from "@/lib/ai/gemini-models";
 import { CURATED_NOTE_LIMIT, formatCuratedNotes, type CuratedNote } from "@/lib/curated-story-memory";
 import { buildCharacterKnowledgePolicy } from "@/lib/character-knowledge";
+import { buildThoughtPlacementPolicy } from "@/lib/thought-placement";
 
 // Remove only obvious consecutive loops; preserve ordinary literary repetition.
 function removeGenerationLoops(value: string): string {
@@ -637,10 +638,6 @@ export const Route = createFileRoute("/api/chat")({
           "RITMO INTERATIVO — UM ACONTECIMENTO POR TURNO: desenvolva apenas UM acontecimento principal ou UMA iniciativa que peça reação da protagonista em cada resposta. Se o personagem fizer uma pergunta, convite, revelação, aproximação física, decisão importante ou surgir uma interrupção, PARE nesse momento e aguarde a resposta do usuário antes de introduzir outro assunto, outra pergunta ou um segundo acontecimento. Não empilhe três perguntas, múltiplos convites, conflitos, ligações, chegadas ou mudanças de cena no mesmo turno. Pode incluir gestos, ambiente e falas que aprofundem o MESMO momento, sem abrir novas demandas de resposta.",
           "PAUSAS NATURAIS: não conclua sozinho uma sequência que depende da reação da protagonista. Termine no primeiro ponto de escolha ou reação significativo; deixe ações e consequências posteriores para o próximo turno. Não precisa encerrar toda resposta com pergunta, suspense artificial ou interrupção abrupta. Permita cenas calmas e continuidade orgânica; se houver mais de um assunto relevante, distribua-os por mensagens futuras. Preserve a autonomia da protagonista e não presuma suas respostas.",
           "ESTILO DE SAÍDA: imersão cinematográfica. Escreva cenas vivas: ambiente, luz, som, gestos, micro-expressões e emoções em camadas. Use *ação ou narração* entre asteriscos e falas entre aspas. Use de 3 a 6 parágrafos curtos e sempre coloque uma linha em branco entre eles. Separe narração, cada fala e cada mudança de ação em parágrafos diferentes. Termine num ponto que dê espaço para o usuário reagir. Nunca escreva falas, ações ou pensamentos no lugar do usuário.",
-          body.thoughts
-            ? "PENSAMENTO DO PERSONAGEM: quando houver monólogo interno, escreva-o exclusivamente como [pensamento]...[/pensamento]. Use 1 a 3 frases em primeira pessoa e coloque-o exatamente no ponto em que surge. Pensamento não é fala e não pode ser percebido por outros personagens sem uma regra explícita da história."
-            : "Não escreva blocos [pensamento]...[/pensamento]. Mantenha o monólogo interno implícito na narração.",
-          "BLOCOS DE PENSAMENTO: se pensamentos estiverem habilitados, escreva-os exclusivamente entre [pensamento] e [/pensamento], sempre fechando o bloco antes de qualquer ação ou fala. Nunca abra um bloco de pensamento sem fechá-lo, nem coloque ações, diálogos ou o restante da cena dentro dele. Se não conseguir manter os delimitadores corretos, escreva a resposta sem marcações de pensamento.",
           "FORMATAÇÃO LIMPA: nunca inclua marcações técnicas de entrada como <USER_TEXT>, </USER_TEXT>, <DIALOGUE>, <MENTAL_SPEECH>, <MEMORY_OR_DREAM>, <CHARACTER_CANON>, <CURRENT_STORY> ou <STORY_MEMORY> no texto da resposta. Elas são delimitadores internos e não fazem parte da narrativa. Escreva somente narração e diálogo legíveis.",
           "IDIOMA CONSISTENTE: escreva narração e diálogos em português brasileiro natural. Não misture palavras soltas em inglês ou outros idiomas dentro de frases em português por erro de geração. Outros idiomas são permitidos apenas quando o contexto justificar explicitamente: personagem bilíngue, fala intencional em outro idioma, citação ou letra de música. Nunca traduza automaticamente títulos, nomes próprios ou falas estrangeiras intencionais.",
           "Responda apenas em texto, sem imagens, áudio ou vídeo, em português do Brasil, a não ser que o usuário escreva em outro idioma.",
@@ -659,7 +656,7 @@ export const Route = createFileRoute("/api/chat")({
         const isolationRule = full.length === 0
           ? "INÍCIO DE NOVA CONVERSA: esta história ainda não possui mensagens anteriores. Não atribua à protagonista nem ao personagem experiências, nomes, relações, falas, lembranças ou acontecimentos de outras conversas. Comece exclusivamente pela cena de abertura deste personagem e pelo texto enviado agora."
           : "ISOLAMENTO DE CONVERSA: apenas mensagens desta conversa, a memória validada para este personagem e seu cânone são fontes narrativas. Nunca complete lacunas com personagens, eventos, nomes ou relações de outras histórias. Não interprete exemplos de estilo nem a cena de abertura como acontecimentos recentes.";
-        const effectiveSystem = [system, isolationRule, contextNote, buildCharacterKnowledgePolicy(body.knowledgeMode)].filter(Boolean).join("\n\n");
+        const effectiveSystem = [system, isolationRule, contextNote, buildCharacterKnowledgePolicy(body.knowledgeMode), buildThoughtPlacementPolicy(body.thoughts === true)].filter(Boolean).join("\n\n");
 
         const messages: ModelMessage[] = [
           ...(full.length === 0 && character.opening_scene
