@@ -1131,7 +1131,16 @@ function Bubble({ role, text, character, showThoughts }: { role: string; text: s
       <MessageContent className="w-full gap-4 rounded-3xl border border-border/30 bg-chat-panel px-5 py-5 shadow-xl backdrop-blur-md sm:overflow-visible sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none sm:backdrop-blur-none">
         {segments.map((segment, index) =>
           segment.type === "thought" ? (
-            showThoughts && <div key={`${segment.type}-${index}`} className="whitespace-pre-wrap break-words border-l-2 border-primary/50 pl-3 text-sm italic text-muted-foreground">{segment.text}</div>
+            showThoughts && (
+              <div
+                key={`${segment.type}-${index}`}
+                role="note"
+                aria-label="Pensamento do personagem"
+                className="my-1 w-full min-w-0 whitespace-pre-wrap break-words rounded-r-lg border-l-[3px] border-primary/60 bg-primary/5 px-3 py-2 text-[15px] italic leading-[1.55] text-muted-foreground"
+              >
+                {segment.text}
+              </div>
+            )
           ) : (
             <MessageResponse key={`${segment.type}-${index}`} className="prose-chat whitespace-pre-wrap break-words text-[17px] leading-[1.55] sm:text-[15px]">{segment.text}</MessageResponse>
           ),

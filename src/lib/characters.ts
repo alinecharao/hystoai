@@ -34,31 +34,62 @@ export function stripNarrativeControlTags(value: string): string {
 export type NarrativeSegment = { type: "body" | "thought"; text: string };
 
 export function parseNarrativeSegments(text: string): NarrativeSegment[] {
-  // Only a *closed* thought block can affect styling. A missing closing
-  // marker must never turn all subsequent dialogue into a thought.
-  const normalized = stripNarrativeControlTags(text)
-    .replace(/\[pensamento\]([\s\S]*?)\[\/pensamento\]/gi, "<thought>$1</thought>")
-    .replace(/\[\/?pensamento\]/gi, "")
-    .replace(/<thought>(?![\s\S]*?<\/thought>)/gi, "")
-    .replace(/<\/thought>/gi, (tag, offset, source) =>
-      source.slice(0, offset).includes("<thought>") ? tag : "");
-
+  // The model sometimes closes a thought by repeating [pensamento] instead
+  // of [/pensamento]. Parse marker pairs in their original order so both
+  // forms render as a thought WITHOUT moving any part of the story.
+  //
+  // Unpaired openings are treated as ordinary body text, never as a thought
+  // that would swallow all subsequent dialogue.
+  const normalized = stripNarrativeControlTags(text);
+  const markers = /\[\s*\/?\s*pensamento\s*\]|<\s*\/?\s*thought\s*>/gi;
   const segments: NarrativeSegment[] = [];
-  const thoughtPattern = /<thought>([\s\S]*?)<\/thought>/gi;
+  let body = "";
+  let thought = "";
+  let insideThought = false;
   let cursor = 0;
 
-  for (const match of normalized.matchAll(thoughtPattern)) {
-    const start = match.index ?? 0;
-    const body = normalized.slice(cursor, start).trim();
-    const thought = (match[1] ?? "").trim();
-    if (body) segments.push({ type: "body", text: body });
-    if (thought) segments.push({ type: "thought", text: thought });
-    cursor = start + match[0].length;
+  const emit = (type: NarrativeSegment["type"], value: string) => {
+    const content = value.trim();
+    if (!content) return;
+    if (type === "body" && segments.at(-1)?.type === "body") {
+      segments[segments.length - 1]!.text += "\n" + content;
+    } else {
+      segments.push({ type, text: content });
+    }
+  };
+
+  for (const match of normalized.matchAll(markers)) {
+    const position = match.index ?? cursor;
+    if (insideThought) thought += normalized.slice(cursor, position);
+    else body += normalized.slice(cursor, position);
+
+    const marker = match[0];
+    const closing = /^\[\s*\/|^<\s*\//i.test(marker);
+    if (insideThought) {
+      // Explicit closing marker OR a repeated opening marker: both close
+      // the currently open thought; the second case fixes Gemini/Groq output.
+      emit("thought", thought);
+      thought = "";
+      insideThought = false;
+    } else if (!closing) {
+      emit("body", body);
+      body = "";
+      insideThought = true;
+    }
+    // Ignore unmatched closing tokens; do not expose transport tags.
+    cursor = position + marker.length;
   }
 
-  const remaining = normalized.slice(cursor).replace(/<\/?thought>/gi, "").trim();
-  if (remaining) segments.push({ type: "body", text: remaining });
-  return segments.length ? segments : [{ type: "body", text: normalized.trim() }];
+  if (insideThought) {
+    // One orphan opening tag is not a thought. Preserve readable text
+    // without exposing the tag or reinterpreting following dialogue.
+    body += thought + normalized.slice(cursor);
+  } else {
+    body += normalized.slice(cursor);
+  }
+  emit("body", body);
+
+  return segments.length ? segments : [{ type: "body", text: normalized.replace(markers, "").trim() }];
 }
 
 export const charactersQuery = queryOptions({
