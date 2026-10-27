@@ -9,7 +9,9 @@ describe("Contextual placement of fictional character thoughts", () => {
     expect(instructions).toContain("Nunca reúna todos os pensamentos no início");
     expect(instructions).toContain("Pensamentos são opcionais");
     expect(instructions).toContain("APENAS FORMATO, NÃO FATOS DA HISTÓRIA");
-    expect(instructions).toContain("Feche o bloco antes de continuar");
+    expect(instructions).toContain("feche com [/pensamento]");
+    expect(instructions).toContain("NUNCA repita [pensamento]");
+    expect(instructions).toContain("separado das ações e falas por uma linha em branco");
   });
 
   it("does not require monologue while thoughts are disabled", () => {
