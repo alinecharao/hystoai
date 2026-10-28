@@ -22,3 +22,6 @@ Algumas respostas do personagem são geradas com `[pensamento]texto[pensamento]`
 
 ## Limites
 A IA ainda pode ocasionalmente gerar marcações incorretas, mas a interface ficou tolerante ao fechamento repetido. Esta correção não requer SQL, mudança de dados, novos custos de IA ou publicação automática.
+
+## Nota de sincronização com o Lovable (27/10/2026)
+O arquivo armazenado no Lovable pode permanecer numa revisão anterior ao PR #16 mesmo quando a `main` já passou por build e testes. Em tal caso, o parser antigo exibe `[pensamento]texto[pensamento]` como texto comum. Esta atualização documental no ramo sincronizado serve também para emitir um novo evento de push e solicitar ao Git Sync do Lovable que atualize os commits pendentes. Ela **não** muda o aplicativo, banco, Secrets nem histórico. Verificar `Project settings → Git` para confirmar que o projeto recebeu o commit mais recente antes de testar novamente no Preview.
