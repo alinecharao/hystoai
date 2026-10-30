@@ -102,7 +102,7 @@ export function ChatRail({ userId, horizontal = false }: { userId: string; horiz
     : "flex min-h-0 w-full flex-1 flex-col items-center gap-2.5 overflow-y-auto overscroll-contain py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
 
   return (
-    <nav aria-label="Conversas recentes" className={railClasses}>
+    <nav aria-label="Todas as conversas" className={railClasses}>
       {target.kind === "library" ? (
         <Link to="/library/$characterId" params={{ characterId: target.characterId }}
           title={newLabel} aria-label={newLabel}
