@@ -303,6 +303,17 @@ create table if not exists public.story_memory_checkpoints (
   foreign key (story_id, user_id, character_id)
     references public.stories(id, user_id, character_id) on delete cascade
 );
+-- Retain existing summaries for the original conversation while moving to
+-- a memory table keyed by story rather than character. Original rows remain.
+insert into public.story_memory_checkpoints (
+  story_id,user_id,character_id,summary,scene,known_facts,
+  last_processed_message_id,revision,updated_at
+)
+select m.story_id,m.user_id,m.character_id,m.summary,m.scene,m.known_facts,
+       m.last_processed_message_id,m.revision,m.updated_at
+from public.story_memories m
+on conflict (story_id) do nothing;
+
 alter table public.story_memory_checkpoints enable row level security;
 drop policy if exists checkpoints_owner_read on public.story_memory_checkpoints;
 create policy checkpoints_owner_read on public.story_memory_checkpoints
