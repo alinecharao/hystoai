@@ -1,4 +1,5 @@
-import { Brain, BookOpen, ChevronRight, Download, FileJson, History, Info, Pencil, Settings2, Trash2, UserRound } from "lucide-react";
+import { Brain, ChevronRight, Download, FileJson, History, Info, Pencil, Trash2, UserRound } from "lucide-react";
+import type { ReactNode } from "react";
 import type { Character } from "@/lib/characters";
 import { SCENE_COMMANDS } from "@/lib/characters";
 import { Button } from "@/components/ui/button";
@@ -47,7 +48,7 @@ function OptionRow({
 }: {
   label: string;
   description?: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <div className="flex min-h-16 flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3 sm:flex-nowrap sm:px-5">
