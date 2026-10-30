@@ -399,6 +399,38 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      append_story_user_message: {
+        Args: { p_message_id: string; p_story_id: string; p_content: string }
+        Returns: boolean
+      }
+      claim_story_generation: {
+        Args: { p_user_message_id: string; p_story_id: string }
+        Returns: string | null
+      }
+      claim_story_regeneration: {
+        Args: { p_assistant_message_id: string; p_story_id: string }
+        Returns: string | null
+      }
+      finish_story_regeneration: {
+        Args: { p_assistant_message_id: string; p_claim_token: string; p_content: string }
+        Returns: string | null
+      }
+      select_story_response_version: {
+        Args: { p_story_id: string; p_assistant_message_id: string; p_version_id: string | null }
+        Returns: boolean
+      }
+      commit_story_memory_checkpoint: {
+        Args: { p_story_id: string; p_assistant_message_id: string; p_summary: string; p_scene: string; p_known_facts: string }
+        Returns: boolean
+      }
+      clear_story_messages: {
+        Args: { p_story_id: string }
+        Returns: boolean
+      }
+      delete_story_message: {
+        Args: { p_story_id: string; p_message_id: string }
+        Returns: boolean
+      }
       commit_chat_story_memory: {
         Args: {
           p_character_id: string
