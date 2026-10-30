@@ -235,6 +235,7 @@ export const Route = createFileRoute("/api/chat")({
         headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
       }),
       DELETE: async ({ request }) => {
+        if (process.env["HYSTO_MULTI_STORIES"] === "true") return json(409, "Atualize o aplicativo para acessar sua história pelo novo endereço.");
         const url = process.env["SUPABASE_URL"]!;
         const key = process.env["SUPABASE_PUBLISHABLE_KEY"]!;
         const token = request.headers.get("authorization")?.replace("Bearer ", "");
@@ -290,6 +291,7 @@ export const Route = createFileRoute("/api/chat")({
         return json(400, "Informe o ID exato da mensagem para excluir.");
       },
       POST: async ({ request }) => {
+        if (process.env["HYSTO_MULTI_STORIES"] === "true") return json(409, "Atualize o aplicativo para acessar sua história pelo novo endereço.");
         const url = process.env["SUPABASE_URL"]!;
         const key = process.env["SUPABASE_PUBLISHABLE_KEY"]!;
         const token = request.headers.get("authorization")?.replace("Bearer ", "");
