@@ -229,7 +229,8 @@ export const Route = createFileRoute("/api/story-chat")({
   server: {
     handlers: {
       GET: async () => new Response(JSON.stringify({
-        responseVersions: process.env["HYSTO_RESPONSE_VERSIONS"] === "true" &&
+        responseVersions: process.env["HYSTO_MULTI_STORIES"] === "true" &&
+          process.env["HYSTO_RESPONSE_VERSIONS"] === "true" &&
           process.env["HYSTO_ATOMIC_APPEND"] === "true",
       }), {
         headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
@@ -252,7 +253,7 @@ export const Route = createFileRoute("/api/story-chat")({
         if(authError||!claims?.claims?.sub)return json(401,"Sessão inválida.");
         const {data:story}=await supabase.from("stories").select("character_id,is_legacy")
           .eq("id",storyId).eq("user_id",claims.claims.sub).maybeSingle();
-        if(!story||story.is_legacy||story.character_id!==deletion.characterId)return json(404,"História não encontrada.");
+        if(!story||story.character_id!==deletion.characterId)return json(404,"História não encontrada.");
         const result=deletion.type==="conversation"
           ?await supabase.rpc("clear_story_messages",{p_story_id:storyId})
           :deletion.type==="message"
@@ -309,7 +310,7 @@ export const Route = createFileRoute("/api/story-chat")({
           .select("id,character_id,archived_at,is_legacy")
           .eq("id",storyId).eq("user_id",userId).maybeSingle();
         if(storyError)return json(503,"Não foi possível consultar a história.");
-        if(!story||story.is_legacy||story.character_id!==body.characterId||story.archived_at)
+        if(!story||story.character_id!==body.characterId||story.archived_at)
           return json(404,"História independente não encontrada.");
         // Use the client UUID as the primary key too: the existing PK enforces
         // idempotency even before an optional unique client_message_id index.
