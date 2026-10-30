@@ -17,7 +17,7 @@ function Layout() {
   const { user } = Route.useRouteContext();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const isChat = pathname.startsWith("/chat/");
+  const isChat = pathname.startsWith("/chat/") || pathname.startsWith("/stories/");
   const links = [
     { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { to: "/characters", label: "Personagens", icon: Users },
