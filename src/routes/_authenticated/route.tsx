@@ -2,6 +2,7 @@ import { createFileRoute, Link, Outlet, redirect, useNavigate, useRouterState } 
 import { Button } from "@/components/ui/button";
 import { LayoutDashboard, Users, UserRound, CircleUserRound } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { ChatRail } from "@/components/chat-rail";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
@@ -51,8 +52,22 @@ function Layout() {
           </Link>
         ))}
       </nav>
-      <div className="min-h-0 flex-1">
-        <Outlet />
+      <div className="flex min-h-0 flex-1">
+        {isChat && (
+          <aside className="hidden min-h-0 shrink-0 py-3 pl-3 pr-2 md:block" aria-label="Barra lateral de conversas">
+            <ChatRail userId={user.id} />
+          </aside>
+        )}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {isChat && (
+            <div className="shrink-0 px-3 pb-1 pt-2 md:hidden">
+              <ChatRail userId={user.id} horizontal />
+            </div>
+          )}
+          <div className="min-h-0 flex-1">
+            <Outlet />
+          </div>
+        </div>
       </div>
     </div>
   );
