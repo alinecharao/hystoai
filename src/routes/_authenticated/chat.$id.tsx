@@ -53,7 +53,7 @@ export const Route = createFileRoute("/_authenticated/chat/$id")({
     ],
   }),
   loader: async ({ context, params }) => {
-    if (import.meta.env.VITE_HYSTO_MULTI_STORIES === "true")
+    if (import.meta.env["VITE_HYSTO_MULTI_STORIES"] === "true")
       throw redirect({ to: "/library/$characterId", params: {characterId:params.id} });
     await Promise.all([
       context.queryClient.ensureQueryData(characterQuery(params.id)),
