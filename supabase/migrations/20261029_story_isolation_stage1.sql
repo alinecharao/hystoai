@@ -10,7 +10,7 @@ set local statement_timeout = '120s';
 create table if not exists public.stories (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
-  character_id uuid not null references public.characters(id) on delete restrict,
+  character_id uuid not null references public.characters(id) on delete cascade,
   title text not null default 'Minha história'
     check (length(btrim(title)) between 1 and 100),
   is_legacy boolean not null default false,
@@ -52,7 +52,8 @@ create policy stories_owner_update on public.stories
 -- Deliberately no direct DELETE permission: removing a story requires a
 -- separate, reviewed server operation with explicit conversation ID.
 revoke all on public.stories from anon, authenticated;
-grant select, insert, update on public.stories to authenticated;
+grant select, insert on public.stories to authenticated;
+grant update (title, archived_at, updated_at) on public.stories to authenticated;
 
 -- Existing one-conversation-per-character records become exactly one
 -- legacy story each, including conversations whose only remaining records
@@ -92,6 +93,11 @@ update public.assistant_response_versions v set story_id = m.story_id
 update public.story_memory_notes n set story_id = m.story_id
   from public.messages m where n.story_id is null and n.anchor_message_id = m.id
   and n.user_id = m.user_id and n.character_id = m.character_id;
+-- Some notes outlive their deleted source message. Keep them associated with
+-- the same original story; never silently discard older records.
+update public.story_memory_notes n set story_id = s.id
+  from public.stories s where n.story_id is null and s.is_legacy
+  and n.user_id = s.user_id and n.character_id = s.character_id;
 update public.chat_generation_claims c set story_id = m.story_id
   from public.messages m where c.story_id is null and c.user_message_id = m.id
   and c.user_id = m.user_id and c.character_id = m.character_id;
@@ -120,10 +126,24 @@ end $$;
 -- Existing v1 RPCs omit story_id. Triggers attach their inserts ONLY to the
 -- legacy story. New story APIs must always specify and verify story_id.
 create or replace function public.hysto_assign_message_story()
-returns trigger language plpgsql security invoker set search_path = ''
+returns trigger language plpgsql security definer set search_path = ''
 as $$
 begin
+  -- First messages sent by the legacy API may not yet have a story row.
+  if auth.uid() is distinct from new.user_id
+    and coalesce(auth.role(), '') <> 'service_role' then
+    raise exception 'Cannot write messages for another user';
+  end if;
   if new.story_id is null then
+    if not exists (
+      select 1 from public.characters c where c.id = new.character_id
+        and (c.user_id = new.user_id or c.user_id is null)
+    ) then
+      raise exception 'Character unavailable';
+    end if;
+    insert into public.stories (user_id, character_id, title, is_legacy)
+      values (new.user_id, new.character_id, 'História original', true)
+      on conflict (user_id, character_id) where is_legacy do nothing;
     select s.id into new.story_id from public.stories s
     where s.user_id = new.user_id and s.character_id = new.character_id
       and s.is_legacy limit 1;
@@ -239,27 +259,27 @@ alter table public.story_memories alter column story_id set not null;
 alter table public.messages
   add constraint messages_story_owner_character_fk
   foreign key (story_id, user_id, character_id)
-  references public.stories(id, user_id, character_id) on delete restrict;
+  references public.stories(id, user_id, character_id) on delete cascade;
 alter table public.assistant_response_versions
   add constraint versions_story_owner_character_fk
   foreign key (story_id, user_id, character_id)
-  references public.stories(id, user_id, character_id) on delete restrict;
+  references public.stories(id, user_id, character_id) on delete cascade;
 alter table public.story_memory_notes
   add constraint notes_story_owner_character_fk
   foreign key (story_id, user_id, character_id)
-  references public.stories(id, user_id, character_id) on delete restrict;
+  references public.stories(id, user_id, character_id) on delete cascade;
 alter table public.chat_generation_claims
   add constraint generation_claims_story_owner_character_fk
   foreign key (story_id, user_id, character_id)
-  references public.stories(id, user_id, character_id) on delete restrict;
+  references public.stories(id, user_id, character_id) on delete cascade;
 alter table public.assistant_regeneration_claims
   add constraint regeneration_claims_story_owner_character_fk
   foreign key (story_id, user_id, character_id)
-  references public.stories(id, user_id, character_id) on delete restrict;
+  references public.stories(id, user_id, character_id) on delete cascade;
 alter table public.story_memories
   add constraint legacy_memory_story_owner_character_fk
   foreign key (story_id, user_id, character_id)
-  references public.stories(id, user_id, character_id) on delete restrict;
+  references public.stories(id, user_id, character_id) on delete cascade;
 
 create index if not exists messages_story_recent_idx
   on public.messages (user_id, story_id, created_at desc, id desc);
@@ -281,7 +301,7 @@ create table if not exists public.story_memory_checkpoints (
   revision bigint not null default 0,
   updated_at timestamptz not null default now(),
   foreign key (story_id, user_id, character_id)
-    references public.stories(id, user_id, character_id) on delete restrict
+    references public.stories(id, user_id, character_id) on delete cascade
 );
 alter table public.story_memory_checkpoints enable row level security;
 drop policy if exists checkpoints_owner_read on public.story_memory_checkpoints;
