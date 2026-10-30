@@ -23,6 +23,7 @@ CREATE INDEX IF NOT EXISTS story_encrypted_payload_story_idx
 ALTER TABLE public.story_encrypted_payloads ENABLE ROW LEVEL SECURITY;
 -- No client-facing policies. A dedicated trusted server gateway must be used.
 REVOKE ALL ON public.story_encrypted_payloads FROM public,anon,authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.story_encrypted_payloads TO service_role;
 CREATE OR REPLACE FUNCTION public.hysto_verify_encrypted_payload()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=''
 AS $guard$
@@ -57,5 +58,40 @@ DROP TRIGGER IF EXISTS hysto_verify_encrypted_payload_guard
 CREATE TRIGGER hysto_verify_encrypted_payload_guard
   BEFORE INSERT OR UPDATE ON public.story_encrypted_payloads
   FOR EACH ROW EXECUTE FUNCTION public.hysto_verify_encrypted_payload();
+-- Keep the sidecar consistent with source deletions, and never retain
+-- ciphertext for a message or note that its owner permanently deleted.
+CREATE OR REPLACE FUNCTION public.hysto_cleanup_encrypted_payload()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=''
+AS $cleanup$
+BEGIN
+  IF TG_TABLE_NAME='messages' THEN
+    DELETE FROM public.story_encrypted_payloads
+      WHERE entity_type='message' AND entity_id=old.id;
+  ELSIF TG_TABLE_NAME='assistant_response_versions' THEN
+    DELETE FROM public.story_encrypted_payloads
+      WHERE entity_type='assistant_version' AND entity_id=old.id;
+  ELSIF TG_TABLE_NAME='story_memory_notes' THEN
+    DELETE FROM public.story_encrypted_payloads
+      WHERE entity_type='manual_note' AND entity_id=old.id;
+  ELSIF TG_TABLE_NAME='story_memory_checkpoints' THEN
+    DELETE FROM public.story_encrypted_payloads
+      WHERE entity_type IN ('checkpoint_summary','checkpoint_scene','checkpoint_facts')
+        AND entity_id=old.story_id;
+  END IF;
+  RETURN old;
+END
+$cleanup$;
+DROP TRIGGER IF EXISTS hysto_cleanup_message_ciphertext ON public.messages;
+CREATE TRIGGER hysto_cleanup_message_ciphertext AFTER DELETE ON public.messages
+  FOR EACH ROW EXECUTE FUNCTION public.hysto_cleanup_encrypted_payload();
+DROP TRIGGER IF EXISTS hysto_cleanup_version_ciphertext ON public.assistant_response_versions;
+CREATE TRIGGER hysto_cleanup_version_ciphertext AFTER DELETE ON public.assistant_response_versions
+  FOR EACH ROW EXECUTE FUNCTION public.hysto_cleanup_encrypted_payload();
+DROP TRIGGER IF EXISTS hysto_cleanup_note_ciphertext ON public.story_memory_notes;
+CREATE TRIGGER hysto_cleanup_note_ciphertext AFTER DELETE ON public.story_memory_notes
+  FOR EACH ROW EXECUTE FUNCTION public.hysto_cleanup_encrypted_payload();
+DROP TRIGGER IF EXISTS hysto_cleanup_checkpoint_ciphertext ON public.story_memory_checkpoints;
+CREATE TRIGGER hysto_cleanup_checkpoint_ciphertext AFTER DELETE ON public.story_memory_checkpoints
+  FOR EACH ROW EXECUTE FUNCTION public.hysto_cleanup_encrypted_payload();
 NOTIFY pgrst,'reload schema';
 COMMIT;
