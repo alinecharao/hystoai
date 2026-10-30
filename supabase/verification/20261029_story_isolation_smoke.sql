@@ -51,7 +51,26 @@ begin
  then raise exception 'Foreign story selected a version'; end if;
 end $$;
 
-do $$
+-- A note anchored in A must not import knowledge from a source in B.
+do $
+declare blocked boolean := false;
+begin
+  begin
+    insert into public.story_memory_notes
+      (user_id,character_id,anchor_message_id,source_message_id,category,body)
+    values (
+      '11111111-1111-4111-8111-111111111111',
+      '33333333-3333-4333-8333-333333333333',
+      '77777777-7777-4777-8777-777777777771',
+      '77777777-7777-4777-8777-777777777772',
+      'private','Fonte de outra história'
+    );
+  exception when others then blocked:=true;
+  end;
+  if not blocked then raise exception 'Cross-story memory source was accepted'; end if;
+end $;
+
+do $
 begin
  if not public.clear_story_messages('55555555-5555-4555-8555-555555555555')
  then raise exception 'Could not clear A'; end if;
@@ -71,4 +90,21 @@ begin
  if public.clear_story_messages('66666666-6666-4666-8666-666666666666')
  then raise exception 'User 2 could clear user 1 story'; end if;
 end $$;
+-- The legacy server can still start a first chat for a new user/character
+-- after the additive migration; its trigger creates the legacy story safely.
+insert into public.messages(id,user_id,character_id,role,content)
+ values (
+ '99999999-9999-4999-8999-999999999991',
+ '22222222-2222-4222-8222-222222222222',
+ '33333333-3333-4333-8333-333333333333',
+ 'user','Primeiro envio legado do usuário 2'
+ );
+do $
+begin
+ if not exists (
+   select 1 from public.stories s join public.messages m on m.story_id=s.id
+   where m.id='99999999-9999-4999-8999-999999999991'
+     and s.user_id='22222222-2222-4222-8222-222222222222' and s.is_legacy
+ ) then raise exception 'Legacy trigger failed to create first conversation'; end if;
+end $;
 reset role;
