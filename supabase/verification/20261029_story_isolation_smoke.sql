@@ -52,7 +52,7 @@ begin
 end $$;
 
 -- A note anchored in A must not import knowledge from a source in B.
-do $
+do $$
 declare blocked boolean := false;
 begin
   begin
@@ -68,9 +68,9 @@ begin
   exception when others then blocked:=true;
   end;
   if not blocked then raise exception 'Cross-story memory source was accepted'; end if;
-end $;
+end $$;
 
-do $
+do $$
 begin
  if not public.clear_story_messages('55555555-5555-4555-8555-555555555555')
  then raise exception 'Could not clear A'; end if;
@@ -99,12 +99,12 @@ insert into public.messages(id,user_id,character_id,role,content)
  '33333333-3333-4333-8333-333333333333',
  'user','Primeiro envio legado do usuário 2'
  );
-do $
+do $$
 begin
  if not exists (
    select 1 from public.stories s join public.messages m on m.story_id=s.id
    where m.id='99999999-9999-4999-8999-999999999991'
      and s.user_id='22222222-2222-4222-8222-222222222222' and s.is_legacy
  ) then raise exception 'Legacy trigger failed to create first conversation'; end if;
-end $;
+end $$;
 reset role;
