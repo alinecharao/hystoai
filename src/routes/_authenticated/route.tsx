@@ -63,9 +63,6 @@ function Layout() {
         ))}
       </nav>
       <div className="flex min-h-0 flex-1">
-        <aside className="hidden min-h-0 shrink-0 py-2 pl-2 pr-1 md:block" aria-label="Navegação global de conversas">
-          <ChatRail userId={user.id} />
-        </aside>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="shrink-0 px-2 pb-1 pt-1.5 md:hidden">
             <ChatRail userId={user.id} horizontal />
@@ -74,6 +71,9 @@ function Layout() {
             <Outlet />
           </div>
         </div>
+        <aside className="hidden min-h-0 shrink-0 py-2 pl-1 pr-2 md:block" aria-label="Navegação global de conversas">
+          <ChatRail userId={user.id} />
+        </aside>
       </div>
     </div>
   );
