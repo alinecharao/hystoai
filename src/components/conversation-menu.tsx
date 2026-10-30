@@ -33,7 +33,7 @@ type Props = {
   busy: boolean;
   exporting: boolean;
   blocked: boolean;
-  onCommand: (id: string) => void;
+  onCommand: (id: (typeof SCENE_COMMANDS)[number]["id"]) => void;
   onShowCharacter: () => void;
   onShowHistory: () => void;
   onShowMemory: () => void;
