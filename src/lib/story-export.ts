@@ -7,6 +7,7 @@ export type StoryExport = {
   schema: "hysto-story-export-v1";
   exported_at: string;
   character: { id: string; name: string };
+  story_id?: string;
   messages: ExportMessage[];
   assistant_versions: ExportVersion[];
   curated_notes: ExportNote[];
@@ -19,17 +20,18 @@ const MAX_PAGES = 100;
 export async function readStoryExport(
   userId: string,
   character: { id: string; name: string },
+  storyId?: string,
 ): Promise<StoryExport> {
   const snapshotAt = new Date().toISOString();
   const messages: ExportMessage[] = [];
   for (let page = 0; page < MAX_PAGES; page++) {
-    const { data, error } = await supabase.from("messages")
+    let query=supabase.from("messages")
       .select("id, role, content, created_at, reply_to_message_id, client_message_id")
-      .eq("user_id", userId).eq("character_id", character.id)
-      .lte("created_at", snapshotAt)
-      .order("created_at", { ascending: true })
-      .order("id", { ascending: true })
-      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+      .eq("user_id",userId).eq("character_id",character.id)
+      .lte("created_at",snapshotAt);
+    if(storyId)query=query.eq("story_id",storyId);
+    const {data,error}=await query.order("created_at",{ascending:true})
+      .order("id",{ascending:true}).range(page*PAGE_SIZE,(page+1)*PAGE_SIZE-1);
     if (error) throw new Error("Falha ao consultar o histórico completo para exportação.");
     messages.push(...(data ?? []));
     if (!data || data.length < PAGE_SIZE) break;
@@ -40,23 +42,23 @@ export async function readStoryExport(
   const assistantIds = messages.filter((item) => item.role === "assistant").map((item) => item.id);
   const assistantVersions: ExportVersion[] = [];
   for (let start = 0; start < assistantIds.length; start += 100) {
-    const { data, error } = await supabase.from("assistant_response_versions")
+    let query=supabase.from("assistant_response_versions")
       .select("id, assistant_message_id, content, is_selected, created_at")
-      .eq("user_id", userId).eq("character_id", character.id)
-      .in("assistant_message_id", assistantIds.slice(start, start + 100))
-      .order("created_at", { ascending: true })
-      .order("id", { ascending: true });
+      .eq("user_id",userId).eq("character_id",character.id)
+      .in("assistant_message_id",assistantIds.slice(start,start+100));
+    if(storyId)query=query.eq("story_id",storyId);
+    const {data,error}=await query.order("created_at",{ascending:true}).order("id",{ascending:true});
     if (error) throw new Error("Falha ao incluir as versões alternativas; exportação interrompida.");
     assistantVersions.push(...(data ?? []));
   }
   let curatedNotes: ExportNote[] = [];
   if (messages[0]) {
-    const { data, error } = await supabase.from("story_memory_notes")
+    let query=supabase.from("story_memory_notes")
       .select("id, category, body, source_message_id")
-      .eq("user_id", userId).eq("character_id", character.id)
-      .eq("anchor_message_id", messages[0].id)
-      .order("created_at", { ascending: true })
-      .order("id", { ascending: true });
+      .eq("user_id",userId).eq("character_id",character.id)
+      .eq("anchor_message_id",messages[0].id);
+    if(storyId)query=query.eq("story_id",storyId);
+    const {data,error}=await query.order("created_at",{ascending:true}).order("id",{ascending:true});
     if (error) throw new Error("Falha ao incluir as memórias manuais; exportação interrompida.");
     curatedNotes = data ?? [];
   }
@@ -64,6 +66,7 @@ export async function readStoryExport(
     schema: "hysto-story-export-v1",
     exported_at: snapshotAt,
     character,
+    ...(storyId ? {story_id:storyId} : {}),
     messages,
     assistant_versions: assistantVersions,
     curated_notes: curatedNotes,
