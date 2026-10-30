@@ -135,7 +135,7 @@ export function StoryMemoryDialog({
             open={open}
             characterId={characterId}
             userId={userId}
-            storyId={storyId}
+            {...(storyId ? {storyId} : {})}
             selectedMessage={selectedMessage}
             onSelectionConsumed={onSelectionConsumed}
           />
