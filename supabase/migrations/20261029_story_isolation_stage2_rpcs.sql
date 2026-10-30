@@ -106,6 +106,15 @@ begin
       and c.claimed_at >= now() - interval '5 minutes';
   if v_story is null then return null; end if;
   perform pg_advisory_xact_lock(hashtextextended(v_uid::text || ':' || v_story::text, 173));
+  -- The lease could have expired and been replaced while acquiring the lock.
+  -- Recheck its exact token and expiry inside the same transaction.
+  if not exists (
+    select 1 from public.assistant_regeneration_claims c
+    where c.assistant_message_id=p_assistant_message_id
+      and c.user_id=v_uid and c.story_id=v_story
+      and c.claim_token=p_claim_token
+      and c.claimed_at >= now()-interval '5 minutes'
+  ) then return null; end if;
   select m.id into v_latest from public.messages m where m.user_id = v_uid
     and m.story_id = v_story order by m.created_at desc,m.id desc limit 1;
   if v_latest is distinct from p_assistant_message_id then return null; end if;
