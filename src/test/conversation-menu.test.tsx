@@ -52,6 +52,10 @@ function fixture(callbacks: {
         onEditCharacter={() => {}}
         canEditCharacter={false}
         onClearHistory={() => {}}
+        visualMode="image"
+        onVisualModeChange={() => {}}
+        visualFrequency="normal"
+        onVisualFrequencyChange={() => {}}
       />
     );
   }
