@@ -1,7 +1,7 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { MessageCircleMore } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import lunaPortrait from "@/assets/luna-portrait.jpg";
 import rexPortrait from "@/assets/rex-portrait.jpg";
 import helenaPortrait from "@/assets/helena-portrait.jpg";
@@ -24,7 +24,6 @@ export const chatRailModeEnabled = import.meta.env["VITE_HYSTO_MULTI_STORIES"] =
 
 export function ChatRail({ userId, horizontal = false }: { userId: string; horizontal?: boolean }) {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const qc = useQueryClient();
   const { data: characters = [], isPending: loadingCharacters, isError: charactersError } = useQuery(charactersQuery);
   const characterKeys = useMemo(() => characters.map((character) => character.id).join("|"), [characters]);
 
@@ -76,14 +75,6 @@ export function ChatRail({ userId, horizontal = false }: { userId: string; horiz
       : buildLegacyRailItems(characters, recent, activeCharacterId),
     [characters, stories, recent, activeCharacterId],
   );
-
-  // A successful navigation may be the first time a conversation is used;
-  // refresh the lightweight list on later route changes (not on each render).
-  useEffect(() => {
-    void qc.invalidateQueries({ queryKey: chatRailModeEnabled
-      ? ["chat-rail-stories", userId]
-      : ["chat-rail-legacy", userId] });
-  }, [pathname, qc, userId]);
 
   const target = railNewConversationTarget(pathname, items, chatRailModeEnabled);
   const loading = loadingCharacters || (chatRailModeEnabled ? loadingStories : loadingRecent);
