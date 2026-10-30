@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, "feature/phase3b-story-isolation-foundation-20261029"]
   workflow_dispatch:
 
 permissions:

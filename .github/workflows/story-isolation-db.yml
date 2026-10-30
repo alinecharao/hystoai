@@ -43,5 +43,8 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261029_story_isolation_stage1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261029_story_isolation_stage2_rpcs.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261029_story_isolation_stage3_cutover.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261029_story_encryption_prepare.sql
       - name: Verify owner isolation, regeneration, clearing and legacy preservation
         run: psql -X -v ON_ERROR_STOP=1 -f supabase/verification/20261029_story_isolation_smoke.sql
+      - name: Verify encrypted storage access, origin and deletion cleanup
+        run: psql -X -v ON_ERROR_STOP=1 -f supabase/verification/20261029_story_encryption_smoke.sql
