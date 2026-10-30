@@ -22,7 +22,7 @@ describe("supporting cast dialogue controls", () => {
     expect(prompt).toContain("NÃO acrescente terceiros");
     expect(prompt).toContain("NUNCA escreva");
     expect(prompt).toContain("não iniciar vários acontecimentos");
-    expect(prompt).toContain("conversar com o protagonista");
+    expect(prompt).toContain("dialogar uns com os outros e com o protagonista");
   });
 
   it("preserves labels and does not confuse internal thoughts with audible dialogue", () => {
