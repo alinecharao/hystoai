@@ -1,3 +1,25 @@
+-- Cutover must deny obsolete character-wide mutation calls.
+DO $
+DECLARE fn text;
+BEGIN
+  FOREACH fn IN ARRAY ARRAY[
+    'public.append_chat_user_message(uuid,uuid,text)',
+    'public.claim_chat_generation(uuid,uuid)',
+    'public.claim_assistant_regeneration(uuid,uuid)',
+    'public.finish_assistant_regeneration(uuid,uuid,text)',
+    'public.select_assistant_response_version(uuid,uuid)',
+    'public.commit_chat_story_memory(uuid,uuid,text,text,text)'
+  ] LOOP
+    IF has_function_privilege('authenticated',fn,'EXECUTE') THEN
+      RAISE EXCEPTION 'Legacy mutator still callable: %',fn;
+    END IF;
+  END LOOP;
+  IF NOT has_function_privilege('authenticated',
+    'public.append_story_user_message(uuid,uuid,text)','EXECUTE') THEN
+    RAISE EXCEPTION 'New story RPC incorrectly revoked';
+  END IF;
+END $;
+
 -- Test new-story separation with fabricated users and stories.
 set role authenticated;
 set request.jwt.claim.role='authenticated';
