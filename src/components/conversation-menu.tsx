@@ -1,6 +1,7 @@
 import { Brain, ChevronRight, Download, FileJson, History, Info, Pencil, Trash2, UserRound } from "lucide-react";
 import type { ReactNode } from "react";
 import type { VisualFrequency, VisualSuggestionMode } from "@/lib/visual-capture";
+import { SUPPORTING_CAST_LABELS, type SupportingCastMode } from "@/lib/supporting-cast";
 import type { Character } from "@/lib/characters";
 import { SCENE_COMMANDS } from "@/lib/characters";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,8 @@ type Props = {
   knowledgeMode: string;
   knowledgeModeLabels: Record<string, string>;
   onKnowledgeModeChange: (mode: string) => void;
+  supportingCastMode: SupportingCastMode;
+  onSupportingCastChange: (mode: SupportingCastMode) => void;
   showThoughts: boolean;
   onThoughtsChange: (value: boolean) => void;
   busy: boolean;
@@ -98,6 +101,7 @@ export function ConversationMenu(props: Props) {
     personas, personaId, onPersonaChange, onEditPersona,
     aiProvider, providerLabels, onProviderChange,
     knowledgeMode, knowledgeModeLabels, onKnowledgeModeChange,
+    supportingCastMode, onSupportingCastChange,
     showThoughts, onThoughtsChange, busy, blocked, exporting,
     onCommand, onShowCharacter, onShowHistory, onShowMemory,
     onExport, onEditCharacter, canEditCharacter, onClearHistory,
@@ -227,6 +231,18 @@ export function ConversationMenu(props: Props) {
                       <Pencil className="size-4" />
                     </Button>
                   </div>
+                </OptionRow>
+                <OptionRow label="Diálogos dos personagens secundários" description="Participação de quem já está presente na cena">
+                  <Select value={supportingCastMode} onValueChange={(mode)=>onSupportingCastChange(mode as SupportingCastMode)} disabled={busy || blocked}>
+                    <SelectTrigger aria-label="Participação dos personagens secundários" className="h-9 w-[142px] border-border/60 bg-background text-xs sm:w-[174px]">
+                      <SelectValue>{SUPPORTING_CAST_LABELS[supportingCastMode]}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="discreet">Discreta</SelectItem>
+                      <SelectItem value="balanced">Equilibrada</SelectItem>
+                      <SelectItem value="participative">Participativa</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </OptionRow>
                 <OptionRow label="Pensamentos do personagem" description="Exibir e gerar pensamentos internos">
                   <Switch checked={showThoughts} onCheckedChange={onThoughtsChange} disabled={busy} aria-label="Mostrar pensamentos" />

@@ -39,6 +39,8 @@ function fixture(callbacks: {
         knowledgeMode="cautious"
         knowledgeModeLabels={{ cautious: "Cauteloso", natural: "Natural" }}
         onKnowledgeModeChange={() => {}}
+        supportingCastMode="balanced"
+        onSupportingCastChange={() => {}}
         showThoughts
         onThoughtsChange={() => {}}
         busy={callbacks.busy ?? false}
@@ -81,6 +83,7 @@ describe("Unified Hysto conversation menu", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Configurações" }));
     expect(screen.getByRole("combobox", { name: "Modelo de IA" })).toBeTruthy();
     expect(screen.getByRole("combobox", { name: "Persona da conversa" })).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Participação dos personagens secundários" })).toBeTruthy();
     expect(screen.getByRole("switch", { name: "Mostrar pensamentos" })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Exportar backup completo/ })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Memória da história/ }));

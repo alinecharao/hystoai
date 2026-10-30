@@ -12,6 +12,7 @@ import { StoryMemoryDialog } from "@/components/story-memory-dialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { ConversationMenu, type ConversationMenuTab } from "@/components/conversation-menu";
+import { DEFAULT_SUPPORTING_CAST_MODE, parseSupportingCastMode, supportingCastStorageKey, type SupportingCastMode } from "@/lib/supporting-cast";
 import { VisualCaptureDialog, VisualMomentCard } from "@/components/visual-capture-dialog";
 import { readVisualPrefs, shouldSuggestVisual, visualStorageKey, type VisualAnchor, type VisualType, type VisualSuggestionMode, type VisualFrequency } from "@/lib/visual-capture";
 import { Switch } from "@/components/ui/switch";
@@ -181,6 +182,7 @@ function ChatWindow({ character, story, stored }: { character: Character; story:
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [aiProvider, setAiProvider] = useState<AiProvider>("auto");
   const [knowledgeMode, setKnowledgeMode] = useState<CharacterKnowledgeMode>(DEFAULT_CHARACTER_KNOWLEDGE_MODE);
+  const [supportingCastMode, setSupportingCastMode] = useState<SupportingCastMode>(DEFAULT_SUPPORTING_CAST_MODE);
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [personaId, setPersonaId] = useState("none");
   const [personaDialog, setPersonaDialog] = useState(false);
@@ -194,9 +196,11 @@ function ChatWindow({ character, story, stored }: { character: Character; story:
   const thoughtsRef = useRef(showThoughts);
   const aiProviderRef = useRef<AiProvider>(aiProvider);
   const knowledgeModeRef = useRef<CharacterKnowledgeMode>(knowledgeMode);
+  const supportingCastRef = useRef<SupportingCastMode>(supportingCastMode);
   thoughtsRef.current = showThoughts;
   aiProviderRef.current = aiProvider;
   knowledgeModeRef.current = knowledgeMode;
+  supportingCastRef.current = supportingCastMode;
 
   useEffect(() => {
     // Read first, then persist subsequent edits. The initial empty render
@@ -240,6 +244,27 @@ function ChatWindow({ character, story, stored }: { character: Character; story:
       window.localStorage.setItem(characterKnowledgeStorageKey(user.id, character.id), next);
     } catch {
       // Private/incognito browser storage may be unavailable.
+    }
+  };
+
+  useEffect(() => {
+    try {
+      setSupportingCastMode(parseSupportingCastMode(
+        window.localStorage.getItem(supportingCastStorageKey(user.id, story.id)),
+      ));
+    } catch {
+      setSupportingCastMode(DEFAULT_SUPPORTING_CAST_MODE);
+    }
+  }, [user.id, story.id]);
+
+  const changeSupportingCast = (mode: SupportingCastMode) => {
+    const next = parseSupportingCastMode(mode);
+    supportingCastRef.current = next;
+    setSupportingCastMode(next);
+    try {
+      window.localStorage.setItem(supportingCastStorageKey(user.id, story.id), next);
+    } catch {
+      // Preserve the selected preference for the current session.
     }
   };
   const image = characterImage(character);
@@ -377,6 +402,7 @@ function ChatWindow({ character, story, stored }: { character: Character; story:
             thoughts: thoughtsRef.current,
             provider: aiProviderRef.current,
             knowledgeMode: knowledgeModeRef.current,
+            supportingCastMode: supportingCastRef.current,
             personaId: personaIdRef.current === "none" ? null : personaIdRef.current,
             clientMessageId: pendingClientMessageIdRef.current,
             ...activeChatTurnIds(regenerateIdRef.current, retryMessageIdRef.current),
@@ -1087,6 +1113,8 @@ function ChatWindow({ character, story, stored }: { character: Character; story:
           knowledgeMode={knowledgeMode}
           knowledgeModeLabels={CHARACTER_KNOWLEDGE_LABELS}
           onKnowledgeModeChange={changeKnowledgeMode}
+          supportingCastMode={supportingCastMode}
+          onSupportingCastChange={changeSupportingCast}
           showThoughts={showThoughts}
           onThoughtsChange={setShowThoughts}
           busy={busy}
