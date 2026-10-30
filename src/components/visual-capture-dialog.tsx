@@ -72,7 +72,7 @@ export function VisualCaptureDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={busy?undefined:onOpenChange}>
+    <Dialog open={open} onOpenChange={(next)=>{if(!busy)onOpenChange(next);}}>
       <DialogContent className="max-h-[92dvh] w-[calc(100%-1.25rem)] max-w-xl overflow-y-auto rounded-2xl border-border bg-background px-5 py-6 sm:px-6">
         <DialogTitle className="flex items-center gap-2 text-xl">
           {type==="image"?<ImageIcon className="size-5 text-primary"/>:<Film className="size-5 text-primary"/>}
