@@ -2,7 +2,7 @@ import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-ro
 import { useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
-import { Brain, ChevronLeft, ChevronRight, RotateCcw, Trash2, X, BookOpen, Settings2 } from "lucide-react";
+import { Brain, ChevronLeft, ChevronRight, RotateCcw, Trash2, X, BookOpen, Settings2, ImageIcon, Film } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Conversation, ConversationContent, ConversationScrollButton } from "@/components/ai-elements/conversation";
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
@@ -12,6 +12,8 @@ import { StoryMemoryDialog } from "@/components/story-memory-dialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { ConversationMenu, type ConversationMenuTab } from "@/components/conversation-menu";
+import { VisualCaptureDialog, VisualMomentCard } from "@/components/visual-capture-dialog";
+import { readVisualPrefs, shouldSuggestVisual, visualStorageKey, type VisualAnchor, type VisualType, type VisualSuggestionMode, type VisualFrequency } from "@/lib/visual-capture";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -151,6 +153,24 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   };
   const [historyDialog, setHistoryDialog] = useState(false);
   const [storyMemoryDialog, setStoryMemoryDialog] = useState(false);
+  const [visualType, setVisualType] = useState<VisualType>("image");
+  const [visualAnchor, setVisualAnchor] = useState<VisualAnchor | null>(null);
+  const [visualOpen, setVisualOpen] = useState(false);
+  const [visualMode, setVisualMode] = useState<VisualSuggestionMode>("image");
+  const [visualFrequency, setVisualFrequency] = useState<VisualFrequency>("normal");
+  const [visualReady, setVisualReady] = useState(false);
+  useEffect(() => {
+    const {mode,frequency}=readVisualPrefs(window.localStorage.getItem(visualStorageKey(user.id,character.id)));
+    setVisualMode(mode);setVisualFrequency(frequency);setVisualReady(true);
+  }, [user.id,character.id]);
+  useEffect(() => {
+    if(!visualReady)return;
+    window.localStorage.setItem(visualStorageKey(user.id,character.id), JSON.stringify({mode:visualMode,frequency:visualFrequency}));
+  },[user.id,character.id,visualMode,visualFrequency,visualReady]);
+
+  const openVisual=(type:VisualType,anchor:VisualAnchor|null)=>{
+    setVisualType(type);setVisualAnchor(anchor);setVisualOpen(true);
+  };
   const [memorySelectedMessage, setMemorySelectedMessage] = useState<MemoryMessageSelection>(null);
   const [historyPage, setHistoryPage] = useState(0);
   const [historyRows, setHistoryRows] = useState<{ id: string; role: string; content: string }[]>([]);
@@ -913,6 +933,19 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
                       </Button>
                     </div>
                   )}
+                  {message.role==="assistant" &&
+                    stored.some(saved=>saved.id===message.id&&saved.role==="assistant") &&
+                    !busy && shouldSuggestVisual(
+                      shownText,
+                      messages.slice(0,index+1).filter(item=>item.role==="assistant").length,
+                      visualMode,visualFrequency,
+                    ) && (
+                    <VisualMomentCard
+                      onImage={()=>openVisual("image",{id:message.id,role:"assistant",text:shownText})}
+                      onVideo={()=>openVisual("video",{id:message.id,role:"assistant",text:shownText})}
+                      allowVideo={visualMode==="image-video"}
+                    />
+                  )}
                   {canGenerateFromUser && (
                     <div className="mt-1 flex justify-end px-1">
                       <Button
@@ -977,6 +1010,24 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
         <footer className="relative z-20 shrink-0 border-t border-border/40 bg-background/85 px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-xl sm:px-5 sm:py-4">
           <div className="mx-auto max-w-3xl space-y-2">
             <div className="flex items-center gap-2 pb-1">
+              <Button type="button" size="icon" variant="outline" title="Preparar imagem da última cena"
+                aria-label="Preparar imagem da última cena" disabled={busy || deletingMessages || versionChanging}
+                onClick={()=>{
+                  const anchor= [...stored].reverse().find(m=>m.role==="assistant");
+                  openVisual("image",anchor?{id:anchor.id,role:"assistant",text:anchor.content}:null);
+                }}
+                className="size-9 shrink-0 rounded-full border-primary/35">
+                <ImageIcon className="size-4"/>
+              </Button>
+              <Button type="button" size="icon" variant="outline" title="Preparar vídeo da última cena"
+                aria-label="Preparar vídeo da última cena" disabled={busy || deletingMessages || versionChanging}
+                onClick={()=>{
+                  const anchor=[...stored].reverse().find(m=>m.role==="assistant");
+                  openVisual("video",anchor?{id:anchor.id,role:"assistant",text:anchor.content}:null);
+                }}
+                className="size-9 shrink-0 rounded-full border-primary/35">
+                <Film className="size-4"/>
+              </Button>
               <Button type="button" variant="outline" size="sm" onClick={() => openConversationMenu("guide")}
                 className="h-9 min-w-0 flex-1 rounded-full border-primary/35 bg-chat-glass px-3 text-xs font-semibold sm:flex-none">
                 <BookOpen className="size-4 shrink-0" /> <span className="truncate">Guie a sua história</span>
@@ -1043,7 +1094,14 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
           canEditCharacter={character.user_id === user.id}
           onEditCharacter={() => { void navigate({ to: "/characters/$id/edit", params: { id: character.id } }); }}
           onClearHistory={() => { void clearHistory(); }}
+          visualMode={visualMode}
+          onVisualModeChange={setVisualMode}
+          visualFrequency={visualFrequency}
+          onVisualFrequencyChange={setVisualFrequency}
         />
+        <VisualCaptureDialog open={visualOpen} onOpenChange={setVisualOpen} type={visualType}
+          anchor={visualAnchor} characterName={character.name} characterId={character.id}
+           />
         <CharacterDialog character={character} open={openInfo} onOpenChange={setOpenInfo} showThoughts={showThoughts} onThoughtsChange={setShowThoughts} />
       </div>
     </TooltipProvider>
