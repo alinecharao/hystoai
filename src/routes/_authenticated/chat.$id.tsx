@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
@@ -53,6 +53,8 @@ export const Route = createFileRoute("/_authenticated/chat/$id")({
     ],
   }),
   loader: async ({ context, params }) => {
+    if (import.meta.env.VITE_HYSTO_MULTI_STORIES === "true")
+      throw redirect({ to: "/library/$characterId", params: {characterId:params.id} });
     await Promise.all([
       context.queryClient.ensureQueryData(characterQuery(params.id)),
       context.queryClient.fetchQuery(messagesQuery(params.id)),
