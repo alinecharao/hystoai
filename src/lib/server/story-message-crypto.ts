@@ -73,8 +73,8 @@ function authenticatedContext(context: StoryCipherContext): Buffer {
   ]), "utf8");
 }
 
-function decodeSegment(value: string): Buffer {
-  if (!value || !/^[A-Za-z0-9_-]+$/.test(value)) {
+function decodeSegment(value: string, allowEmpty = false): Buffer {
+  if ((!value && !allowEmpty) || (value && !/^[A-Za-z0-9_-]+$/.test(value))) {
     throw new Error("Invalid encrypted message envelope.");
   }
   const bytes = Buffer.from(value, "base64url");
@@ -131,7 +131,7 @@ export function decryptStoryText(
   const [encodedIv, encodedTag, encodedData] = parts;
   const iv = decodeSegment(encodedIv!);
   const tag = decodeSegment(encodedTag!);
-  const encrypted = decodeSegment(encodedData!);
+  const encrypted = decodeSegment(encodedData!, true);
   if (iv.length !== IV_BYTES || tag.length !== TAG_BYTES ||
       encrypted.length > MAX_PLAINTEXT_BYTES + TAG_BYTES) {
     throw new Error("Invalid encrypted message envelope.");
