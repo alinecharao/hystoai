@@ -1,5 +1,5 @@
 -- Cutover must deny obsolete character-wide mutation calls.
-DO $
+DO $$
 DECLARE fn text;
 BEGIN
   FOREACH fn IN ARRAY ARRAY[
@@ -18,7 +18,7 @@ BEGIN
     'public.append_story_user_message(uuid,uuid,text)','EXECUTE') THEN
     RAISE EXCEPTION 'New story RPC incorrectly revoked';
   END IF;
-END $;
+END $$;
 
 -- Test new-story separation with fabricated users and stories.
 set role authenticated;
