@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 
 export const Route = createFileRoute("/_authenticated/library/$characterId")({
   loader: async ({ context, params }) => {
-    if (import.meta.env.VITE_HYSTO_MULTI_STORIES !== "true") throw redirect({ to:"/dashboard" });
+    if (import.meta.env["VITE_HYSTO_MULTI_STORIES"] !== "true") throw redirect({ to:"/dashboard" });
     await Promise.all([
       context.queryClient.ensureQueryData(characterQuery(params.characterId)),
       context.queryClient.fetchQuery(storiesForCharacterQuery(context.user.id,params.characterId)),
