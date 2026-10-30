@@ -30,14 +30,14 @@ export const Route=createFileRoute("/api/visual-capture")({
         const raw:unknown=await request.json().catch(()=>null);
         if(!raw||typeof raw!=="object"||Array.isArray(raw))return asJson(400,{error:"Dados inválidos."});
         const body=raw as Record<string,unknown>;
-        const storyId=body.storyId===null||body.storyId===undefined?null:body.storyId;
-        const aspect=body.aspectRatio;
-        if(body.type!=="image"||body.confirmed!==true||
-          !isUuid(body.characterId)||!isUuid(body.messageId)||
+        const storyId=body["storyId"]===null||body["storyId"]===undefined?null:body["storyId"];
+        const aspect=body["aspectRatio"];
+        if(body["type"]!=="image"||body["confirmed"]!==true||
+          !isUuid(body["characterId"])||!isUuid(body["messageId"])||
           (storyId!==null&&!isUuid(storyId))||
           !["1:1","16:9","9:16"].includes(String(aspect))||
-          typeof body.prompt!=="string"||body.prompt.trim().length<20||
-          body.prompt.length>1800
+          typeof body["prompt"]!=="string"||body["prompt"].trim().length<20||
+          body["prompt"].length>1800
         )return asJson(400,{error:"Revise a cena, escolha o formato e confirme novamente."});
 
         const supabase=createClient<Database>(process.env["SUPABASE_URL"]!,process.env["SUPABASE_PUBLISHABLE_KEY"]!,{
@@ -49,18 +49,18 @@ export const Route=createFileRoute("/api/visual-capture")({
         if(authError||!uid)return asJson(401,{error:"Sessão inválida."});
 
         const {data:character,error:characterError}=await supabase.from("characters")
-          .select("id,user_id").eq("id",body.characterId).maybeSingle();
+          .select("id,user_id").eq("id",body["characterId"]).maybeSingle();
         if(characterError||!character||(character.user_id!==uid&&character.user_id!==null))
           return asJson(404,{error:"Personagem não encontrado."});
         if(storyId){
           const {data:story}=await supabase.from("stories")
-            .select("id").eq("id",storyId).eq("character_id",body.characterId)
+            .select("id").eq("id",storyId).eq("character_id",body["characterId"])
             .eq("user_id",uid).is("archived_at",null).maybeSingle();
           if(!story)return asJson(404,{error:"História não encontrada."});
         }
         let query=supabase.from("messages")
-          .select("id").eq("id",body.messageId).eq("role","assistant")
-          .eq("character_id",body.characterId).eq("user_id",uid);
+          .select("id").eq("id",body["messageId"]).eq("role","assistant")
+          .eq("character_id",body["characterId"]).eq("user_id",uid);
         if(storyId)query=query.eq("story_id",storyId);
         const {data:message,error:messageError}=await query.maybeSingle();
         if(messageError||!message)return asJson(404,{error:"A cena escolhida ainda não foi salva nesta história."});
@@ -79,7 +79,7 @@ export const Route=createFileRoute("/api/visual-capture")({
             },
             signal:AbortSignal.timeout(110000),
             body:JSON.stringify({
-              contents:[{role:"user",parts:[{text:body.prompt.trim()}]}],
+              contents:[{role:"user",parts:[{text:body["prompt"].trim()}]}],
               generationConfig:{
                 responseModalities:["IMAGE"],
                 imageConfig:{aspectRatio:aspect,imageSize:"1K"},
