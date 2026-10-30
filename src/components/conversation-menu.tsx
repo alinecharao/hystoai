@@ -1,5 +1,6 @@
 import { Brain, ChevronRight, Download, FileJson, History, Info, Pencil, Trash2, UserRound } from "lucide-react";
 import type { ReactNode } from "react";
+import type { VisualFrequency, VisualSuggestionMode } from "@/lib/visual-capture";
 import type { Character } from "@/lib/characters";
 import { SCENE_COMMANDS } from "@/lib/characters";
 import { Button } from "@/components/ui/button";
@@ -41,6 +42,10 @@ type Props = {
   onEditCharacter: () => void;
   canEditCharacter: boolean;
   onClearHistory: () => void;
+  visualMode: VisualSuggestionMode;
+  onVisualModeChange: (value: VisualSuggestionMode) => void;
+  visualFrequency: VisualFrequency;
+  onVisualFrequencyChange: (value: VisualFrequency) => void;
 };
 
 function OptionRow({
@@ -96,6 +101,7 @@ export function ConversationMenu(props: Props) {
     showThoughts, onThoughtsChange, busy, blocked, exporting,
     onCommand, onShowCharacter, onShowHistory, onShowMemory,
     onExport, onEditCharacter, canEditCharacter, onClearHistory,
+    visualMode, onVisualModeChange, visualFrequency, onVisualFrequencyChange,
   } = props;
 
   const selectedPersona = personas.find((persona) => persona.id === personaId);
@@ -234,6 +240,33 @@ export function ConversationMenu(props: Props) {
                       {Object.entries(knowledgeModeLabels).map(([id, label]) => (
                         <SelectItem key={id} value={id}>{label}</SelectItem>
                       ))}
+                    </SelectContent>
+                  </Select>
+                </OptionRow>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="mb-3 text-sm font-semibold text-muted-foreground">Captura visual</h3>
+              <div className="divide-y divide-border/50 overflow-hidden rounded-2xl border border-border bg-secondary/20">
+                <OptionRow label="Sugestões de cenas" description="Nunca geram imagens ou vídeos automaticamente">
+                  <Select value={visualMode} onValueChange={(v)=>onVisualModeChange(v as VisualSuggestionMode)}>
+                    <SelectTrigger aria-label="Sugestões visuais" className="h-9 w-[142px] border-border/60 bg-background text-xs sm:w-[174px]"><SelectValue/></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="off">Desativadas</SelectItem>
+                      <SelectItem value="image">Somente imagem</SelectItem>
+                      <SelectItem value="image-video">Imagem e vídeo</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </OptionRow>
+                <OptionRow label="Frequência das sugestões">
+                  <Select value={visualFrequency} onValueChange={(v)=>onVisualFrequencyChange(v as VisualFrequency)}
+                    disabled={visualMode==="off"}>
+                    <SelectTrigger aria-label="Frequência das sugestões" className="h-9 w-[142px] border-border/60 bg-background text-xs sm:w-[174px]"><SelectValue/></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="rare">Rara</SelectItem>
+                      <SelectItem value="normal">Normal</SelectItem>
+                      <SelectItem value="frequent">Frequente</SelectItem>
                     </SelectContent>
                   </Select>
                 </OptionRow>
