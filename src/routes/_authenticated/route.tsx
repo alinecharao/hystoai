@@ -1,8 +1,9 @@
 import { createFileRoute, Link, Outlet, redirect, useNavigate, useRouterState } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { LayoutDashboard, Users, UserRound, CircleUserRound } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { ChatRail } from "@/components/chat-rail";
+import { ChatRail, chatRailModeEnabled } from "@/components/chat-rail";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
@@ -26,6 +27,17 @@ function Layout() {
     { to: "/profile", label: "Perfil", icon: CircleUserRound },
   ] as const;
   const { queryClient } = Route.useRouteContext();
+  const lastPath = useRef(pathname);
+  useEffect(() => {
+    if (pathname === lastPath.current) return;
+    lastPath.current = pathname;
+    if (isChat) {
+      void queryClient.invalidateQueries({
+        queryKey: [chatRailModeEnabled ? "chat-rail-stories" : "chat-rail-legacy", user.id],
+      });
+    }
+  }, [pathname, isChat, user.id, queryClient]);
+
   async function signOut() {
     await queryClient.cancelQueries();
     queryClient.clear();
