@@ -18,6 +18,18 @@ O aplicativo atual permanece operando exatamente no modo anterior; `HYSTO_MULTI_
 - Na ativação, links antigos `/chat/$id` levam à biblioteca. Endpoint legado POST/DELETE não aceita operações sem `story_id` enquanto o modo multi-história estiver ativo.
 - Extração de memória automática legada bloqueada durante modo multi-história; não utilizar memória de outra história.
 
+## Terceira migração obrigatória na ativação
+
+A auditoria de 29/10 identificou que os RPCs legados em `user_id + character_id` permaneceriam acessíveis mesmo depois de atualizar o front-end, permitindo operações ambíguas quando o mesmo personagem tivesse duas histórias. Para resolver:
+
+1. Aplicar `20261029_story_isolation_stage1.sql` e `stage2_rpcs.sql` **no banco isolado de teste**.
+2. Validar a nova API e a biblioteca com contas fictícias.
+3. Como etapa de **cutover**, aplicar `20261029_story_isolation_stage3_cutover.sql` no ambiente testado. Ela revoga acesso dos usuários autenticados aos seis RPCs legados de escrita, preservando os releases de leases por token e os RPCs novos por história.
+4. Confirmar com `has_function_privilege` que os RPCs antigos estão inacessíveis; o CI em PostgreSQL descartável executa essa prova.
+5. Na implantação principal, aplicar a etapa 3 somente no instante da troca para a API de histórias com a flag ativa. Não executar com o chat antigo atendendo envios.
+
+**ATENÇÃO:** desativar as flags depois da etapa 3 sem restaurar explicitamente as permissões dos RPCs antigos deixará o chat legado sem escrita. Uma volta controlada precisa ser preparada e testada separadamente antes de produção; nunca prometer rollback completo apenas desligando as flags.
+
 ## Flags de ativação
 Definir somente APÓS migrar e testar um banco de teste separado:
 - Servidor: `HYSTO_MULTI_STORIES=true`.
