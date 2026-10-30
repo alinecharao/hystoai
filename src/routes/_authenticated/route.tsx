@@ -31,12 +31,10 @@ function Layout() {
   useEffect(() => {
     if (pathname === lastPath.current) return;
     lastPath.current = pathname;
-    if (isChat) {
-      void queryClient.invalidateQueries({
-        queryKey: [chatRailModeEnabled ? "chat-rail-stories" : "chat-rail-legacy", user.id],
-      });
-    }
-  }, [pathname, isChat, user.id, queryClient]);
+    void queryClient.invalidateQueries({
+      queryKey: [chatRailModeEnabled ? "chat-rail-stories" : "chat-rail-legacy", user.id],
+    });
+  }, [pathname, user.id, queryClient]);
 
   async function signOut() {
     await queryClient.cancelQueries();
@@ -65,17 +63,13 @@ function Layout() {
         ))}
       </nav>
       <div className="flex min-h-0 flex-1">
-        {isChat && (
-          <aside className="hidden min-h-0 shrink-0 py-3 pl-3 pr-2 md:block" aria-label="Barra lateral de conversas">
-            <ChatRail userId={user.id} />
-          </aside>
-        )}
+        <aside className="hidden min-h-0 shrink-0 py-2 pl-2 pr-1 md:block" aria-label="Navegação global de conversas">
+          <ChatRail userId={user.id} />
+        </aside>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {isChat && (
-            <div className="shrink-0 px-3 pb-1 pt-2 md:hidden">
-              <ChatRail userId={user.id} horizontal />
-            </div>
-          )}
+          <div className="shrink-0 px-2 pb-1 pt-1.5 md:hidden">
+            <ChatRail userId={user.id} horizontal />
+          </div>
           <div className="min-h-0 flex-1">
             <Outlet />
           </div>
