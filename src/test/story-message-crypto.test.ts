@@ -1,5 +1,4 @@
-// @vitest-environment node
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { randomBytes } from "node:crypto";
 import {
   decryptStoryText, encryptStoryText, isEncryptedStoryText,
@@ -63,10 +62,12 @@ describe("Story message AES-256-GCM", () => {
 
   it("never silently generates a replacement key", () => {
     const original=process.env["HYSTO_MESSAGE_ENCRYPTION_KEY_V1"];
+    vi.stubGlobal("window", undefined);
     try {
       delete process.env["HYSTO_MESSAGE_ENCRYPTION_KEY_V1"];
       expect(() => requireServerMessageKey()).toThrow("not configured");
     } finally {
+      vi.unstubAllGlobals();
       if(original === undefined) delete process.env["HYSTO_MESSAGE_ENCRYPTION_KEY_V1"];
       else process.env["HYSTO_MESSAGE_ENCRYPTION_KEY_V1"]=original;
     }
