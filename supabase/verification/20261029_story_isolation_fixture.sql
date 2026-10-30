@@ -86,3 +86,12 @@ insert into public.story_memory_notes(user_id,character_id,anchor_message_id,cat
  ('11111111-1111-4111-8111-111111111111','33333333-3333-4333-8333-333333333333','44444444-4444-4444-8444-444444444441','fact','Nota antiga fictícia');
 insert into public.assistant_response_versions(assistant_message_id,user_id,character_id,content,is_selected)
  values ('44444444-4444-4444-8444-444444444442','11111111-1111-4111-8111-111111111111','33333333-3333-4333-8333-333333333333','Alternativa fictícia',true);
+
+-- Simulate installed legacy callable functions so Stage 3 can prove revoke.
+CREATE FUNCTION public.append_chat_user_message(uuid,uuid,text) RETURNS boolean LANGUAGE SQL AS 'SELECT true';
+CREATE FUNCTION public.claim_chat_generation(uuid,uuid) RETURNS uuid LANGUAGE SQL AS 'SELECT NULL::uuid';
+CREATE FUNCTION public.claim_assistant_regeneration(uuid,uuid) RETURNS uuid LANGUAGE SQL AS 'SELECT NULL::uuid';
+CREATE FUNCTION public.finish_assistant_regeneration(uuid,uuid,text) RETURNS uuid LANGUAGE SQL AS 'SELECT NULL::uuid';
+CREATE FUNCTION public.select_assistant_response_version(uuid,uuid) RETURNS boolean LANGUAGE SQL AS 'SELECT true';
+CREATE FUNCTION public.commit_chat_story_memory(uuid,uuid,text,text,text) RETURNS boolean LANGUAGE SQL AS 'SELECT true';
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO authenticated;
