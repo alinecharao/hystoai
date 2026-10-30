@@ -53,7 +53,7 @@ export const Route = createFileRoute("/_authenticated/stories/$storyId")({
     ],
   }),
   loader: async ({ context, params }) => {
-    if(import.meta.env.VITE_HYSTO_MULTI_STORIES !== "true")throw redirect({to:"/dashboard"});
+    if(import.meta.env["VITE_HYSTO_MULTI_STORIES"] !== "true")throw redirect({to:"/dashboard"});
     const story=await context.queryClient.ensureQueryData(storyQuery(context.user.id,params.storyId));
     await Promise.all([
       context.queryClient.ensureQueryData(characterQuery(story.character_id)),
