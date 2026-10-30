@@ -64,9 +64,9 @@ export function readVisualPrefs(text: string | null): {
   try {
     const candidate = text ? JSON.parse(text) as Record<string, unknown> : {};
     return {
-      mode: candidate.mode === "off" || candidate.mode === "image-video" ? candidate.mode : "image",
-      frequency: candidate.frequency === "rare" || candidate.frequency === "frequent"
-        ? candidate.frequency : "normal",
+      mode: candidate["mode"] === "off" || candidate["mode"] === "image-video" ? candidate["mode"] : "image",
+      frequency: candidate["frequency"] === "rare" || candidate["frequency"] === "frequent"
+        ? candidate["frequency"] : "normal",
     };
   } catch {
     return { mode: "image", frequency: "normal" };
