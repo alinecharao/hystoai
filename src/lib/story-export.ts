@@ -95,7 +95,7 @@ export async function readStoryExport(
     schema: "hysto-story-export-v2",
     exported_at: snapshotAt,
     character,
-    ...(storyId ? { story_id: storyId, story: storyMetadata } : {}),
+    ...(storyId && storyMetadata ? { story_id: storyId, story: storyMetadata } : {}),
     memory_checkpoint: memoryCheckpoint,
     messages,
     assistant_versions: assistantVersions,
