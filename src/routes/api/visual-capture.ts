@@ -38,6 +38,8 @@ export const Route=createFileRoute("/api/visual-capture")({
           typeof body["prompt"]!=="string"||body["prompt"].trim().length<20||
           body["prompt"].length>1800
         )return asJson(400,{error:"Revise a cena, escolha o formato e confirme novamente."});
+        if(process.env["HYSTO_MULTI_STORIES"]==="true" && !storyId)
+          return asJson(400,{error:"Selecione a história original da imagem antes de gerar."});
 
         const supabase=createClient<Database>(process.env["SUPABASE_URL"]!,process.env["SUPABASE_PUBLISHABLE_KEY"]!,{
           global:{headers:{Authorization:`Bearer ${token}`}},
