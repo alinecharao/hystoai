@@ -107,7 +107,7 @@ export const Route=createFileRoute("/api/visual-capture")({
             candidates?:Array<{content?:{parts?:Array<{inlineData?:{mimeType?:string;data?:string}}>} }>;
           };
           const image=data.candidates?.flatMap(c=>c.content?.parts??[])
-            .map(part=>part.inlineData).find(part=>part?.data&&/image\/(png|jpeg|webp)/.test(part.mimeType??""));
+            .map(part=>part.inlineData).find(part=>part?.data&&/^image\/(png|jpeg|webp)$/.test(part.mimeType??""));
           if(!image?.data||!image.mimeType||image.data.length>12_000_000)
             return asJson(502,{error:"O provedor não retornou uma imagem válida."});
           return asJson(200,{mimeType:image.mimeType,data:image.data,model:IMAGE_MODEL,
