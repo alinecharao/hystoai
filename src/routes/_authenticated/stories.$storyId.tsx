@@ -56,7 +56,12 @@ export const Route = createFileRoute("/_authenticated/stories/$storyId")({
   }),
   loader: async ({ context, params }) => {
     if(import.meta.env["VITE_HYSTO_MULTI_STORIES"] !== "true")throw redirect({to:"/dashboard"});
-    const story=await context.queryClient.ensureQueryData(storyQuery(context.user.id,params.storyId));
+    // Reload metadata on each route visit: an archived story must not
+    // remain reachable through a previously cached direct link.
+    const story=await context.queryClient.fetchQuery(storyQuery(context.user.id,params.storyId));
+    if (story.archived_at) {
+      throw redirect({to:"/library/$characterId",params:{characterId:story.character_id}});
+    }
     await Promise.all([
       context.queryClient.ensureQueryData(characterQuery(story.character_id)),
       context.queryClient.fetchQuery(storyMessagesQuery(context.user.id,story.id)),
