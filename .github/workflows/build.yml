@@ -2,9 +2,9 @@ name: Hysto build validation
 
 on:
   push:
-    branches: [main]
+    branches: [main, testing]
   pull_request:
-    branches: [main, "feature/phase3b-story-isolation-foundation-20261029"]
+    branches: [main, testing]
   workflow_dispatch:
 
 permissions:
@@ -22,7 +22,6 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
       # TanStack Router generates src/routeTree.gen.ts when Vite runs.
-      # Build first so new file-based routes are typed before TypeScript checks.
       - name: Production build and route generation
         run: bun run build
       - name: Typecheck
