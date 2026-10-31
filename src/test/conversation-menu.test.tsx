@@ -85,7 +85,7 @@ describe("Unified Hysto conversation menu", () => {
     expect(screen.getByRole("combobox", { name: "Persona da conversa" })).toBeTruthy();
     expect(screen.getByRole("combobox", { name: "Participação dos personagens secundários" })).toBeTruthy();
     expect(screen.getByRole("switch", { name: "Mostrar pensamentos" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Exportar backup completo/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Exportar dados da história/ })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Memória da história/ }));
     expect(onMemory).toHaveBeenCalledOnce();
     expect(onClose).toHaveBeenCalledWith(false);
