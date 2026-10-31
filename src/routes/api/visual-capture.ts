@@ -9,7 +9,6 @@ const asJson=(status:number, data:object)=>new Response(JSON.stringify(data),{
 const imageEnabled=()=>process.env["HYSTO_VISUAL_GENERATION_ENABLED"]==="true"
   && process.env["HYSTO_VISUAL_BILLABLE_OPT_IN"]==="true"
   && Boolean(process.env["GEMINI_API_KEY"]);
-const quotaLocks=new Map<string,number>();
 const IMAGE_MODEL="gemini-3.1-flash-image";
 
 export const Route=createFileRoute("/api/visual-capture")({
@@ -33,7 +32,7 @@ export const Route=createFileRoute("/api/visual-capture")({
         const storyId=body["storyId"]===null||body["storyId"]===undefined?null:body["storyId"];
         const aspect=body["aspectRatio"];
         if(body["type"]!=="image"||body["confirmed"]!==true||
-          !isUuid(body["characterId"])||!isUuid(body["messageId"])||
+          !isUuid(body["characterId"])||!isUuid(body["messageId"])||!isUuid(body["requestId"])||
           (storyId!==null&&!isUuid(storyId))||
           !["1:1","16:9","9:16"].includes(String(aspect))||
           typeof body["prompt"]!=="string"||body["prompt"].trim().length<20||
@@ -65,11 +64,18 @@ export const Route=createFileRoute("/api/visual-capture")({
         const {data:message,error:messageError}=await query.maybeSingle();
         if(messageError||!message)return asJson(404,{error:"A cena escolhida ainda não foi salva nesta história."});
 
-        // A best-effort safety cap, not a substitute for a durable per-account
-        // spending budget. Enable billable production only with that budget.
-        const last=quotaLocks.get(uid)??0;
-        if(Date.now()-last<90_000)return asJson(429,{error:"Aguarde antes de gerar outra imagem."});
-        quotaLocks.set(uid,Date.now());
+        // Reserve a durable idempotent quota BEFORE any paid provider call.
+        // If the budget migration has not been installed, fail closed.
+        // Reservations are intentionally not refunded after uncertain provider
+        // errors: a timeout may still have incurred a bill.
+        const {data:reserved,error:quotaError}=await supabase.rpc("reserve_visual_generation",{
+          p_request_id:String(body["requestId"]),
+        });
+        if(quotaError){
+          console.warn("visual_quota_unavailable",{code:quotaError.code});
+          return asJson(503,{error:"Limites seguros de geração indisponíveis. Nenhuma imagem foi solicitada."});
+        }
+        if(!reserved)return asJson(429,{error:"Limite diário de imagens atingido ou solicitação repetida."});
         try{
           const response=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:generateContent`,{
             method:"POST",
