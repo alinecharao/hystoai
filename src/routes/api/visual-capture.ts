@@ -8,6 +8,7 @@ const asJson=(status:number, data:object)=>new Response(JSON.stringify(data),{
 });
 const imageEnabled=()=>process.env["HYSTO_VISUAL_GENERATION_ENABLED"]==="true"
   && process.env["HYSTO_VISUAL_BILLABLE_OPT_IN"]==="true"
+  && process.env["HYSTO_VISUAL_QUOTA_INSTALLED"]==="true"
   && Boolean(process.env["GEMINI_API_KEY"]);
 const IMAGE_MODEL="gemini-3.1-flash-image";
 
