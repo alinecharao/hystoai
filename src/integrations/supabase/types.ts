@@ -70,6 +70,7 @@ export type Database = {
       }
       assistant_response_versions: {
         Row: {
+          story_id: string
           id: string
           assistant_message_id: string
           user_id: string
@@ -79,6 +80,7 @@ export type Database = {
           created_at: string
         }
         Insert: {
+          story_id?: string
           id?: string
           assistant_message_id: string
           user_id: string
@@ -88,6 +90,7 @@ export type Database = {
           created_at?: string
         }
         Update: {
+          story_id?: string
           id?: string
           assistant_message_id?: string
           user_id?: string
@@ -108,6 +111,7 @@ export type Database = {
       }
       assistant_regeneration_claims: {
         Row: {
+          story_id: string
           assistant_message_id: string
           user_id: string
           character_id: string
@@ -115,6 +119,7 @@ export type Database = {
           claimed_at: string
         }
         Insert: {
+          story_id?: string
           assistant_message_id: string
           user_id: string
           character_id: string
@@ -122,6 +127,7 @@ export type Database = {
           claimed_at?: string
         }
         Update: {
+          story_id?: string
           assistant_message_id?: string
           user_id?: string
           character_id?: string
@@ -140,6 +146,7 @@ export type Database = {
       }
       chat_generation_claims: {
         Row: {
+          story_id: string
           character_id: string
           claim_token: string
           claimed_at: string
@@ -147,6 +154,7 @@ export type Database = {
           user_message_id: string
         }
         Insert: {
+          story_id?: string
           character_id: string
           claim_token?: string
           claimed_at?: string
@@ -154,6 +162,7 @@ export type Database = {
           user_message_id: string
         }
         Update: {
+          story_id?: string
           character_id?: string
           claim_token?: string
           claimed_at?: string
@@ -172,6 +181,7 @@ export type Database = {
       }
       messages: {
         Row: {
+          story_id: string
           character_id: string
           client_message_id: string | null
           content: string
@@ -182,6 +192,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          story_id?: string
           character_id: string
           client_message_id?: string | null
           content: string
@@ -192,6 +203,7 @@ export type Database = {
           user_id?: string
         }
         Update: {
+          story_id?: string
           character_id?: string
           client_message_id?: string | null
           content?: string
@@ -271,6 +283,7 @@ export type Database = {
       }
       story_memory_notes: {
         Row: {
+          story_id: string
           id: string
           user_id: string
           character_id: string
@@ -282,6 +295,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          story_id?: string
           id?: string
           user_id?: string
           character_id: string
@@ -293,6 +307,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          story_id?: string
           id?: string
           user_id?: string
           character_id?: string
@@ -320,8 +335,21 @@ export type Database = {
           },
         ]
       }
+      stories: {
+        Row: { id: string; user_id: string; character_id: string; title: string; is_legacy: boolean; archived_at: string | null; created_at: string; updated_at: string }
+        Insert: { id?: string; user_id: string; character_id: string; title?: string; is_legacy?: boolean; archived_at?: string | null; created_at?: string; updated_at?: string }
+        Update: { id?: string; user_id?: string; character_id?: string; title?: string; is_legacy?: boolean; archived_at?: string | null; created_at?: string; updated_at?: string }
+        Relationships: [{ foreignKeyName: "stories_character_id_fkey"; columns: ["character_id"]; isOneToOne: false; referencedRelation: "characters"; referencedColumns: ["id"] }]
+      }
+      story_memory_checkpoints: {
+        Row: { story_id: string; user_id: string; character_id: string; summary: string; scene: string; known_facts: string; last_processed_message_id: string | null; revision: number; updated_at: string }
+        Insert: { story_id: string; user_id: string; character_id: string; summary?: string; scene?: string; known_facts?: string; last_processed_message_id?: string | null; revision?: number; updated_at?: string }
+        Update: { story_id?: string; user_id?: string; character_id?: string; summary?: string; scene?: string; known_facts?: string; last_processed_message_id?: string | null; revision?: number; updated_at?: string }
+        Relationships: []
+      }
       story_memories: {
         Row: {
+          story_id: string
           character_id: string
           known_facts: string
           last_processed_message_id: string | null
@@ -333,6 +361,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          story_id?: string
           character_id: string
           known_facts?: string
           last_processed_message_id?: string | null
@@ -344,6 +373,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          story_id?: string
           character_id?: string
           known_facts?: string
           last_processed_message_id?: string | null
@@ -369,6 +399,38 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      append_story_user_message: {
+        Args: { p_message_id: string; p_story_id: string; p_content: string }
+        Returns: boolean
+      }
+      claim_story_generation: {
+        Args: { p_user_message_id: string; p_story_id: string }
+        Returns: string | null
+      }
+      claim_story_regeneration: {
+        Args: { p_assistant_message_id: string; p_story_id: string }
+        Returns: string | null
+      }
+      finish_story_regeneration: {
+        Args: { p_assistant_message_id: string; p_claim_token: string; p_content: string }
+        Returns: string | null
+      }
+      select_story_response_version: {
+        Args: { p_story_id: string; p_assistant_message_id: string; p_version_id: string | null }
+        Returns: boolean
+      }
+      commit_story_memory_checkpoint: {
+        Args: { p_story_id: string; p_assistant_message_id: string; p_summary: string; p_scene: string; p_known_facts: string }
+        Returns: boolean
+      }
+      clear_story_messages: {
+        Args: { p_story_id: string }
+        Returns: boolean
+      }
+      delete_story_message: {
+        Args: { p_story_id: string; p_message_id: string }
+        Returns: boolean
+      }
       commit_chat_story_memory: {
         Args: {
           p_character_id: string

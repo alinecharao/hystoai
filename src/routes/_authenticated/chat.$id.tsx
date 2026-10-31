@@ -1,8 +1,8 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
-import { Brain, ChevronLeft, ChevronRight, Download, Ellipsis, FileJson, Info, Pencil, RotateCcw, Trash2, UserRound, X } from "lucide-react";
+import { Brain, ChevronLeft, ChevronRight, RotateCcw, Trash2, X, BookOpen, Settings2, ImageIcon, Film } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Conversation, ConversationContent, ConversationScrollButton } from "@/components/ai-elements/conversation";
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
@@ -11,11 +11,13 @@ import { Shimmer } from "@/components/ai-elements/shimmer";
 import { StoryMemoryDialog } from "@/components/story-memory-dialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { ConversationMenu, type ConversationMenuTab } from "@/components/conversation-menu";
+import { DEFAULT_SUPPORTING_CAST_MODE, parseSupportingCastMode, supportingCastStorageKey, type SupportingCastMode } from "@/lib/supporting-cast";
+import { VisualCaptureDialog, VisualMomentCard } from "@/components/visual-capture-dialog";
+import { readVisualPrefs, shouldSuggestVisual, visualStorageKey, type VisualAnchor, type VisualType, type VisualSuggestionMode, type VisualFrequency } from "@/lib/visual-capture";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { supabase } from "@/integrations/supabase/client";
 import { activeChatTurnIds } from "@/lib/chat-validation";
@@ -53,6 +55,8 @@ export const Route = createFileRoute("/_authenticated/chat/$id")({
     ],
   }),
   loader: async ({ context, params }) => {
+    if (import.meta.env["VITE_HYSTO_MULTI_STORIES"] === "true")
+      throw redirect({ to: "/library/$characterId", params: {characterId:params.id} });
     await Promise.all([
       context.queryClient.ensureQueryData(characterQuery(params.id)),
       context.queryClient.fetchQuery(messagesQuery(params.id)),
@@ -102,6 +106,7 @@ type AssistantVersion = { id: string; assistant_message_id: string; content: str
 function ChatWindow({ character, stored }: { character: Character; stored: { id: string; role: string; content: string; reply_to_message_id: string | null }[] }) {
   const { user } = Route.useRouteContext();
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const { data: responseVersionsEnabled = false } = useQuery({
     queryKey: ["chat-feature-response-versions"],
     queryFn: async () => {
@@ -141,9 +146,32 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   const [visibleCount, setVisibleCount] = useState(15);
   const [showThoughts, setShowThoughts] = useState(true);
   const [openInfo, setOpenInfo] = useState(false);
-  const [guideDialog, setGuideDialog] = useState(false);
+  const [conversationMenuOpen, setConversationMenuOpen] = useState(false);
+  const [conversationMenuTab, setConversationMenuTab] = useState<ConversationMenuTab>("guide");
+  const openConversationMenu = (tab: ConversationMenuTab) => {
+    setConversationMenuTab(tab);
+    setConversationMenuOpen(true);
+  };
   const [historyDialog, setHistoryDialog] = useState(false);
   const [storyMemoryDialog, setStoryMemoryDialog] = useState(false);
+  const [visualType, setVisualType] = useState<VisualType>("image");
+  const [visualAnchor, setVisualAnchor] = useState<VisualAnchor | null>(null);
+  const [visualOpen, setVisualOpen] = useState(false);
+  const [visualMode, setVisualMode] = useState<VisualSuggestionMode>("image");
+  const [visualFrequency, setVisualFrequency] = useState<VisualFrequency>("normal");
+  const [visualReady, setVisualReady] = useState(false);
+  useEffect(() => {
+    const {mode,frequency}=readVisualPrefs(window.localStorage.getItem(visualStorageKey(user.id,character.id)));
+    setVisualMode(mode);setVisualFrequency(frequency);setVisualReady(true);
+  }, [user.id,character.id]);
+  useEffect(() => {
+    if(!visualReady)return;
+    window.localStorage.setItem(visualStorageKey(user.id,character.id), JSON.stringify({mode:visualMode,frequency:visualFrequency}));
+  },[user.id,character.id,visualMode,visualFrequency,visualReady]);
+
+  const openVisual=(type:VisualType,anchor:VisualAnchor|null)=>{
+    setVisualType(type);setVisualAnchor(anchor);setVisualOpen(true);
+  };
   const [memorySelectedMessage, setMemorySelectedMessage] = useState<MemoryMessageSelection>(null);
   const [historyPage, setHistoryPage] = useState(0);
   const [historyRows, setHistoryRows] = useState<{ id: string; role: string; content: string }[]>([]);
@@ -152,6 +180,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [aiProvider, setAiProvider] = useState<AiProvider>("auto");
   const [knowledgeMode, setKnowledgeMode] = useState<CharacterKnowledgeMode>(DEFAULT_CHARACTER_KNOWLEDGE_MODE);
+  const [supportingCastMode, setSupportingCastMode] = useState<SupportingCastMode>(DEFAULT_SUPPORTING_CAST_MODE);
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [personaId, setPersonaId] = useState("none");
   const [personaDialog, setPersonaDialog] = useState(false);
@@ -165,9 +194,11 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   const thoughtsRef = useRef(showThoughts);
   const aiProviderRef = useRef<AiProvider>(aiProvider);
   const knowledgeModeRef = useRef<CharacterKnowledgeMode>(knowledgeMode);
+  const supportingCastRef = useRef<SupportingCastMode>(supportingCastMode);
   thoughtsRef.current = showThoughts;
   aiProviderRef.current = aiProvider;
   knowledgeModeRef.current = knowledgeMode;
+  supportingCastRef.current = supportingCastMode;
 
   useEffect(() => {
     // Read first, then persist subsequent edits. The initial empty render
@@ -211,6 +242,27 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
       window.localStorage.setItem(characterKnowledgeStorageKey(user.id, character.id), next);
     } catch {
       // Private/incognito browser storage may be unavailable.
+    }
+  };
+
+  useEffect(() => {
+    try {
+      setSupportingCastMode(parseSupportingCastMode(
+        window.localStorage.getItem(supportingCastStorageKey(user.id, character.id)),
+      ));
+    } catch {
+      setSupportingCastMode(DEFAULT_SUPPORTING_CAST_MODE);
+    }
+  }, [user.id, character.id]);
+
+  const changeSupportingCast = (mode: SupportingCastMode) => {
+    const next = parseSupportingCastMode(mode);
+    supportingCastRef.current = next;
+    setSupportingCastMode(next);
+    try {
+      window.localStorage.setItem(supportingCastStorageKey(user.id, character.id), next);
+    } catch {
+      // Preserve the selected preference for the current session.
     }
   };
   const image = characterImage(character);
@@ -347,6 +399,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
             thoughts: thoughtsRef.current,
             provider: aiProviderRef.current,
             knowledgeMode: knowledgeModeRef.current,
+            supportingCastMode: supportingCastRef.current,
             personaId: personaIdRef.current === "none" ? null : personaIdRef.current,
             clientMessageId: pendingClientMessageIdRef.current,
             ...activeChatTurnIds(regenerateIdRef.current, retryMessageIdRef.current),
@@ -743,30 +796,6 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
         latestSavedRole={stored[stored.length - 1]?.role ?? null}
         responseVersionsEnabled={responseVersionsEnabled}
       />
-      <Dialog open={guideDialog} onOpenChange={setGuideDialog}>
-        <DialogContent className="max-h-[85dvh] w-[calc(100%-2rem)] max-w-lg overflow-y-auto rounded-2xl p-5 sm:p-6">
-          <DialogTitle className="text-xl">Guie a sua história</DialogTitle>
-          <DialogDescription>Escolha como a história deve continuar. A IA respeitará suas decisões e a continuidade da cena.</DialogDescription>
-          <div className="mt-2 overflow-hidden rounded-xl border border-border">
-            {SCENE_COMMANDS.map((command) => (
-              <button
-                key={command.id}
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  if (busy) return;
-                  setGuideDialog(false);
-                  sendOnce(commandMarker(command.id));
-                }}
-                className="flex w-full flex-col gap-1 border-b border-border px-4 py-4 text-left transition-colors last:border-b-0 hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <span className="font-semibold text-foreground">{command.label} <span aria-hidden="true">{command.icon}</span></span>
-                <span className="text-sm leading-relaxed text-muted-foreground">{command.description}</span>
-              </button>
-            ))}
-          </div>
-        </DialogContent>
-      </Dialog>
       <Dialog open={personaDialog} onOpenChange={setPersonaDialog}>
         <DialogContent className="max-h-[85dvh] overflow-y-auto">
           <DialogTitle>{editingPersonaId ? "Editar persona" : "Criar persona"}</DialogTitle>
@@ -799,22 +828,10 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
             <Avatar character={character} className="size-8 text-base" />
             <span className="truncate font-sans text-sm font-semibold">{character.name}</span>
           </button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="shrink-0 rounded-full" aria-label="Opções da conversa"><Ellipsis /></Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-52">
-              <DropdownMenuItem onSelect={() => setOpenInfo(true)}><Info /> Ver personagem</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => { setHistoryDialog(true); void loadHistoryPage(0); }}><RotateCcw /> Ver mensagens desde o início</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setStoryMemoryDialog(true)}><Brain /> Memória da história</DropdownMenuItem>
-              <DropdownMenuItem disabled={exporting || busy || deletingMessages || versionChanging} onSelect={() => void exportChat("txt")}><Download /> {exporting ? "Exportando..." : "Exportar história (.txt)"}</DropdownMenuItem>
-              <DropdownMenuItem disabled={exporting || busy || deletingMessages || versionChanging} onSelect={() => void exportChat("json")}><FileJson /> Exportar backup completo (.json)</DropdownMenuItem>
-              {character.user_id === user.id && (
-                <DropdownMenuItem asChild><Link to="/characters/$id/edit" params={{ id: character.id }}><Pencil /> Editar personagem</Link></DropdownMenuItem>
-              )}
-              <DropdownMenuItem onSelect={() => void clearHistory()} className="text-destructive"><Trash2 /> Limpar conversa</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Button type="button" variant="ghost" size="icon" className="shrink-0 rounded-full"
+            onClick={() => openConversationMenu("settings")} aria-label="Abrir configurações da conversa">
+            <Settings2 className="size-5" />
+          </Button>
         </header>
 
         <Conversation className="relative z-10 min-h-0">
@@ -942,6 +959,19 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
                       </Button>
                     </div>
                   )}
+                  {message.role==="assistant" &&
+                    stored.some(saved=>saved.id===message.id&&saved.role==="assistant") &&
+                    !busy && shouldSuggestVisual(
+                      shownText,
+                      messages.slice(0,index+1).filter(item=>item.role==="assistant").length,
+                      visualMode,visualFrequency,
+                    ) && (
+                    <VisualMomentCard
+                      onImage={()=>openVisual("image",{id:message.id,role:"assistant",text:shownText})}
+                      onVideo={()=>openVisual("video",{id:message.id,role:"assistant",text:shownText})}
+                      allowVideo={visualMode==="image-video"}
+                    />
+                  )}
                   {canGenerateFromUser && (
                     <div className="mt-1 flex justify-end px-1">
                       <Button
@@ -1005,51 +1035,32 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
 
         <footer className="relative z-20 shrink-0 border-t border-border/40 bg-background/85 px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-xl sm:px-5 sm:py-4">
           <div className="mx-auto max-w-3xl space-y-2">
-            <div className="flex items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              <Select value={aiProvider} onValueChange={(value) => changeAiProvider(value as AiProvider)}>
-                <SelectTrigger className="h-8 w-[138px] shrink-0 rounded-full border-primary/35 bg-chat-glass px-3 text-xs">
-                  <span className="mr-1">✨</span>
-                  <SelectValue>{AI_PROVIDER_LABELS[aiProvider]}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="auto">✨ Automático</SelectItem>
-                  <SelectItem value="gemini">Gemini</SelectItem>
-                  <SelectItem value="groq">Groq</SelectItem>
-                  <SelectItem value="openrouter">OpenRouter</SelectItem>
-                  <SelectItem value="kimi">Kimi</SelectItem>
-                  <SelectItem value="openai">OpenAI</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={knowledgeMode} onValueChange={changeKnowledgeMode} disabled={busy || versionChanging || deletingMessages}>
-                <SelectTrigger
-                  className="h-8 w-[168px] shrink-0 rounded-full border-primary/35 bg-chat-glass px-3 text-xs"
-                  aria-label="Repertório de conhecimentos do personagem"
-                  title="Define o quanto o personagem conhece referências, não o que a IA consegue pesquisar"
-                >
-                  <Brain className="mr-1 size-3.5 shrink-0" />
-                  <SelectValue>{CHARACTER_KNOWLEDGE_LABELS[knowledgeMode]}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="cautious">Cauteloso — evita presumir</SelectItem>
-                  <SelectItem value="natural">Natural — repertório plausível</SelectItem>
-                  <SelectItem value="established">Só estabelecido — rigoroso</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={personaId} onValueChange={selectPersona} disabled={busy}>
-                <SelectTrigger className="h-8 w-[150px] shrink-0 rounded-full border-primary/35 bg-chat-glass px-3 text-xs" aria-label="Persona da conversa">
-                  <UserRound className="mr-1 size-3.5 shrink-0" />
-                  <SelectValue placeholder="Sem persona" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Sem persona</SelectItem>
-                  {personas.map((persona) => <SelectItem key={persona.id} value={persona.id}>{persona.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => openPersonaEditor(personas.find((p) => p.id === personaId))} className="shrink-0 rounded-full border-primary/35 bg-chat-glass text-xs">
-                <Pencil className="size-3.5" /> {personaId === "none" ? "Criar persona" : "Editar persona"}
+            <div className="flex items-center gap-2 pb-1">
+              <Button type="button" size="icon" variant="outline" title="Preparar imagem da última cena"
+                aria-label="Preparar imagem da última cena" disabled={busy || deletingMessages || versionChanging}
+                onClick={()=>{
+                  const anchor= [...stored].reverse().find(m=>m.role==="assistant");
+                  openVisual("image",anchor?{id:anchor.id,role:"assistant",text:anchor.content}:null);
+                }}
+                className="size-9 shrink-0 rounded-full border-primary/35">
+                <ImageIcon className="size-4"/>
               </Button>
-              <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => setGuideDialog(true)} className="shrink-0 rounded-full border-primary/35 bg-chat-glass text-xs">
-                💗 Guie a sua história
+              <Button type="button" size="icon" variant="outline" title="Preparar vídeo da última cena"
+                aria-label="Preparar vídeo da última cena" disabled={busy || deletingMessages || versionChanging}
+                onClick={()=>{
+                  const anchor=[...stored].reverse().find(m=>m.role==="assistant");
+                  openVisual("video",anchor?{id:anchor.id,role:"assistant",text:anchor.content}:null);
+                }}
+                className="size-9 shrink-0 rounded-full border-primary/35">
+                <Film className="size-4"/>
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={() => openConversationMenu("guide")}
+                className="h-9 min-w-0 flex-1 rounded-full border-primary/35 bg-chat-glass px-3 text-xs font-semibold sm:flex-none">
+                <BookOpen className="size-4 shrink-0" /> <span className="truncate">Guie a sua história</span>
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={() => openConversationMenu("settings")}
+                className="h-9 min-w-0 flex-1 rounded-full border-primary/35 bg-chat-glass px-3 text-xs font-semibold sm:flex-none">
+                <Settings2 className="size-4 shrink-0" /> <span className="truncate">Configurações</span>
               </Button>
             </div>
             <PromptInput
@@ -1079,6 +1090,46 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
           </div>
         </footer>
 
+        <ConversationMenu
+          open={conversationMenuOpen}
+          tab={conversationMenuTab}
+          onTabChange={setConversationMenuTab}
+          onOpenChange={setConversationMenuOpen}
+          character={character}
+          portraitSrc={image}
+          personas={personas}
+          personaId={personaId}
+          onPersonaChange={selectPersona}
+          onEditPersona={() => openPersonaEditor(personas.find((p) => p.id === personaId))}
+          aiProvider={aiProvider}
+          providerLabels={AI_PROVIDER_LABELS}
+          onProviderChange={(value) => changeAiProvider(value as AiProvider)}
+          knowledgeMode={knowledgeMode}
+          knowledgeModeLabels={CHARACTER_KNOWLEDGE_LABELS}
+          onKnowledgeModeChange={changeKnowledgeMode}
+          supportingCastMode={supportingCastMode}
+          onSupportingCastChange={changeSupportingCast}
+          showThoughts={showThoughts}
+          onThoughtsChange={setShowThoughts}
+          busy={busy}
+          blocked={versionChanging || deletingMessages}
+          exporting={exporting}
+          onCommand={(id) => sendOnce(commandMarker(id))}
+          onShowCharacter={() => setOpenInfo(true)}
+          onShowHistory={() => { setHistoryDialog(true); void loadHistoryPage(0); }}
+          onShowMemory={() => setStoryMemoryDialog(true)}
+          onExport={(format) => { void exportChat(format); }}
+          canEditCharacter={character.user_id === user.id}
+          onEditCharacter={() => { void navigate({ to: "/characters/$id/edit", params: { id: character.id } }); }}
+          onClearHistory={() => { void clearHistory(); }}
+          visualMode={visualMode}
+          onVisualModeChange={setVisualMode}
+          visualFrequency={visualFrequency}
+          onVisualFrequencyChange={setVisualFrequency}
+        />
+        <VisualCaptureDialog open={visualOpen} onOpenChange={setVisualOpen} type={visualType}
+          anchor={visualAnchor} characterName={character.name} characterId={character.id}
+           />
         <CharacterDialog character={character} open={openInfo} onOpenChange={setOpenInfo} showThoughts={showThoughts} onThoughtsChange={setShowThoughts} />
       </div>
     </TooltipProvider>

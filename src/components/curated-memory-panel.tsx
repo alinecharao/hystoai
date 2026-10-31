@@ -13,10 +13,11 @@ import {
 export type MemoryMessageSelection = { id: string; text: string } | null;
 
 export function CuratedMemoryPanel({
-  characterId, userId, open, selectedMessage, onSelectionConsumed,
+  characterId, userId, storyId, open, selectedMessage, onSelectionConsumed,
 }: {
   characterId: string;
   userId: string;
+  storyId?: string;
   open: boolean;
   selectedMessage: MemoryMessageSelection;
   onSelectionConsumed: () => void;
@@ -31,13 +32,15 @@ export function CuratedMemoryPanel({
   const [formError, setFormError] = useState<string | null>(null);
 
   const { data: anchor, error: anchorError, isPending: anchorPending } = useQuery({
-    queryKey: ["story-notes-anchor", characterId, userId],
+    queryKey: ["story-notes-anchor", characterId, userId, storyId],
     enabled: open,
     staleTime: 0,
     queryFn: async () => {
-      const { data, error } = await supabase.from("messages")
-        .select("id").eq("user_id", userId).eq("character_id", characterId)
-        .order("created_at", { ascending: true }).order("id", { ascending: true })
+      let query = supabase.from("messages")
+        .select("id").eq("user_id",userId).eq("character_id",characterId);
+      if(storyId)query=query.eq("story_id",storyId);
+      const {data,error}=await query
+        .order("created_at",{ascending:true}).order("id",{ascending:true})
         .limit(1).maybeSingle();
       if (error) throw error;
       return data?.id ?? null;
@@ -45,17 +48,17 @@ export function CuratedMemoryPanel({
   });
 
   const { data: notes = [], error: notesError, isPending: notesPending } = useQuery({
-    queryKey: ["story-curated-notes", characterId, userId, anchor],
+    queryKey: ["story-curated-notes", characterId, userId, storyId, anchor],
     enabled: open && Boolean(anchor),
     staleTime: 0,
     queryFn: async (): Promise<CuratedNote[]> => {
       if (!anchor) return [];
-      const { data, error } = await supabase.from("story_memory_notes")
+      let query=supabase.from("story_memory_notes")
         .select("id, category, body, source_message_id, created_at")
-        .eq("user_id", userId).eq("character_id", characterId)
-        .eq("anchor_message_id", anchor)
-        .order("created_at", { ascending: true }).order("id", { ascending: true })
-        .limit(CURATED_NOTE_LIMIT + 1);
+        .eq("user_id",userId).eq("character_id",characterId).eq("anchor_message_id",anchor);
+      if(storyId)query=query.eq("story_id",storyId);
+      const {data,error}=await query.order("created_at",{ascending:true})
+        .order("id",{ascending:true}).limit(CURATED_NOTE_LIMIT+1);
       if (error) throw error;
       return (data ?? []) as CuratedNote[];
     },
@@ -108,7 +111,7 @@ export function CuratedMemoryPanel({
         const { data, error } = await supabase.from("story_memory_notes")
           .update({ category, body: content, updated_at: now })
           .eq("id", noteId).eq("user_id", userId)
-          .eq("character_id", characterId).eq("anchor_message_id", anchor)
+           .eq("character_id", characterId).eq("anchor_message_id", anchor)
           .select("id").maybeSingle();
         if (error) throw error;
         if (!data) throw new Error("Esta anotação não está mais disponível. Recarregue a ficha.");
@@ -116,11 +119,12 @@ export function CuratedMemoryPanel({
         const { error } = await supabase.from("story_memory_notes").insert({
           user_id: userId, character_id: characterId,
           anchor_message_id: anchor, source_message_id: sourceMessageId,
+          ...(storyId ? {story_id:storyId} : {}),
           category, body: content,
         });
         if (error) throw error;
       }
-      await qc.invalidateQueries({ queryKey: ["story-curated-notes", characterId, userId] });
+      await qc.invalidateQueries({ queryKey: ["story-curated-notes", characterId, userId, storyId] });
       reset();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Não foi possível salvar a nota.");

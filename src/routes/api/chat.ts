@@ -9,6 +9,7 @@ import { buildStoryMemoryHistory, readStoryMemoryJson, selectSafeStoryMemory, ty
 import { getGeminiModelCandidates, isGeminiModelUnavailableError } from "@/lib/ai/gemini-models";
 import { CURATED_NOTE_LIMIT, formatCuratedNotes, type CuratedNote } from "@/lib/curated-story-memory";
 import { buildCharacterKnowledgePolicy } from "@/lib/character-knowledge";
+import { buildSupportingCastPolicy } from "@/lib/supporting-cast";
 import { buildThoughtPlacementPolicy } from "@/lib/thought-placement";
 
 // Remove only obvious consecutive loops; preserve ordinary literary repetition.
@@ -235,6 +236,7 @@ export const Route = createFileRoute("/api/chat")({
         headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
       }),
       DELETE: async ({ request }) => {
+        if (process.env["HYSTO_MULTI_STORIES"] === "true") return json(409, "Atualize o aplicativo para acessar sua história pelo novo endereço.");
         const url = process.env["SUPABASE_URL"]!;
         const key = process.env["SUPABASE_PUBLISHABLE_KEY"]!;
         const token = request.headers.get("authorization")?.replace("Bearer ", "");
@@ -290,6 +292,7 @@ export const Route = createFileRoute("/api/chat")({
         return json(400, "Informe o ID exato da mensagem para excluir.");
       },
       POST: async ({ request }) => {
+        if (process.env["HYSTO_MULTI_STORIES"] === "true") return json(409, "Atualize o aplicativo para acessar sua história pelo novo endereço.");
         const url = process.env["SUPABASE_URL"]!;
         const key = process.env["SUPABASE_PUBLISHABLE_KEY"]!;
         const token = request.headers.get("authorization")?.replace("Bearer ", "");
@@ -313,6 +316,7 @@ export const Route = createFileRoute("/api/chat")({
           thoughts?: boolean;
           provider?: AiProvider;
           knowledgeMode?: unknown;
+          supportingCastMode?: unknown;
           personaId?: string | null;
           regenerateMessageId?: string | null;
           clientMessageId?: string;
@@ -656,7 +660,7 @@ export const Route = createFileRoute("/api/chat")({
         const isolationRule = full.length === 0
           ? "INÍCIO DE NOVA CONVERSA: esta história ainda não possui mensagens anteriores. Não atribua à protagonista nem ao personagem experiências, nomes, relações, falas, lembranças ou acontecimentos de outras conversas. Comece exclusivamente pela cena de abertura deste personagem e pelo texto enviado agora."
           : "ISOLAMENTO DE CONVERSA: apenas mensagens desta conversa, a memória validada para este personagem e seu cânone são fontes narrativas. Nunca complete lacunas com personagens, eventos, nomes ou relações de outras histórias. Não interprete exemplos de estilo nem a cena de abertura como acontecimentos recentes.";
-        const effectiveSystem = [system, isolationRule, contextNote, buildCharacterKnowledgePolicy(body.knowledgeMode), buildThoughtPlacementPolicy(body.thoughts === true)].filter(Boolean).join("\n\n");
+        const effectiveSystem = [system, isolationRule, contextNote, buildCharacterKnowledgePolicy(body.knowledgeMode), buildSupportingCastPolicy(body.supportingCastMode), buildThoughtPlacementPolicy(body.thoughts === true)].filter(Boolean).join("\n\n");
 
         const messages: ModelMessage[] = [
           ...(full.length === 0 && character.opening_scene

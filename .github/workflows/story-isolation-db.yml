@@ -1,0 +1,51 @@
+name: Story isolation database tests
+on:
+  pull_request:
+    paths:
+      - "supabase/migrations/20261029_story_isolation_*.sql"
+      - "supabase/verification/**"
+      - ".github/workflows/story-isolation-db.yml"
+  push:
+    branches: ["feature/phase3b-story-isolation-foundation-20261029"]
+    paths:
+      - "supabase/migrations/20261029_story_isolation_*.sql"
+      - "supabase/verification/**"
+      - ".github/workflows/story-isolation-db.yml"
+jobs:
+  isolation:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test_only
+          POSTGRES_USER: postgres
+          POSTGRES_DB: hysto_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d hysto_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: test_only
+      PGDATABASE: hysto_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create synthetic legacy schema and records
+        run: psql -X -v ON_ERROR_STOP=1 -f supabase/verification/20261029_story_isolation_fixture.sql
+      - name: Apply staged migrations to ephemeral database
+        run: |
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261029_story_isolation_stage1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261029_story_isolation_stage2_rpcs.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261029_story_isolation_stage3_cutover.sql
+          # A real Lovable clone has no optional commit_chat_story_memory RPC.
+          # Prove the cutover tolerates its absence and is repeatable.
+          psql -X -v ON_ERROR_STOP=1 -c "DROP FUNCTION IF EXISTS public.commit_chat_story_memory(uuid,uuid,text,text,text)"
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261029_story_isolation_stage3_cutover.sql
+      - name: Verify owner isolation, regeneration, clearing and legacy preservation
+        run: psql -X -v ON_ERROR_STOP=1 -f supabase/verification/20261029_story_isolation_smoke.sql
