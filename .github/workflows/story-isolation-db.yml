@@ -4,6 +4,7 @@ on:
     paths:
       - "supabase/migrations/20261029_story_isolation_*.sql"
       - "supabase/migrations/20261029_story_encryption_prepare.sql"
+      - "supabase/migrations/20261031_visual_generation_quotas.sql"
       - "supabase/verification/**"
       - ".github/workflows/story-isolation-db.yml"
   push:
@@ -11,6 +12,7 @@ on:
     paths:
       - "supabase/migrations/20261029_story_isolation_*.sql"
       - "supabase/migrations/20261029_story_encryption_prepare.sql"
+      - "supabase/migrations/20261031_visual_generation_quotas.sql"
       - "supabase/verification/**"
       - ".github/workflows/story-isolation-db.yml"
   workflow_dispatch:
@@ -51,7 +53,10 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -c "DROP FUNCTION IF EXISTS public.commit_chat_story_memory(uuid,uuid,text,text,text)"
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261029_story_isolation_stage3_cutover.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261029_story_encryption_prepare.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261031_visual_generation_quotas.sql
       - name: Verify owner isolation, regeneration, clearing and legacy preservation
         run: psql -X -v ON_ERROR_STOP=1 -f supabase/verification/20261029_story_isolation_smoke.sql
       - name: Verify encrypted storage access, origin and deletion cleanup
         run: psql -X -v ON_ERROR_STOP=1 -f supabase/verification/20261029_story_encryption_smoke.sql
+      - name: Verify billable image budgets and replay prevention
+        run: psql -X -v ON_ERROR_STOP=1 -f supabase/verification/20261031_visual_generation_quotas_smoke.sql
