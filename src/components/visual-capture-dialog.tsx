@@ -68,7 +68,8 @@ export function VisualCaptureDialog({
   function save(){
     if(!url)return;
     const a=document.createElement("a");
-    a.href=url;a.download=`hysto-cena-${anchor?.id.slice(0,8)??"imagem"}.${result?.mimeType==="image/jpeg"?"jpg":"png"}`;
+    const extension = result?.mimeType === "image/jpeg" ? "jpg" : result?.mimeType === "image/webp" ? "webp" : "png";
+    a.href=url;a.download=`hysto-cena-${anchor?.id.slice(0,8)??"imagem"}.${extension}`;
     document.body.appendChild(a);a.click();a.remove();
   }
 
