@@ -10,7 +10,8 @@ BEGIN
     'public.select_assistant_response_version(uuid,uuid)',
     'public.commit_chat_story_memory(uuid,uuid,text,text,text)'
   ] LOOP
-    IF has_function_privilege('authenticated',fn,'EXECUTE') THEN
+    IF to_regprocedure(fn) IS NOT NULL
+       AND has_function_privilege('authenticated',fn,'EXECUTE') THEN
       RAISE EXCEPTION 'Legacy mutator still callable: %',fn;
     END IF;
   END LOOP;
