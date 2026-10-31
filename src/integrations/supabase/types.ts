@@ -399,6 +399,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      reserve_visual_generation: {
+        Args: { p_request_id: string }
+        Returns: boolean
+      }
       append_story_user_message: {
         Args: { p_message_id: string; p_story_id: string; p_content: string }
         Returns: boolean
