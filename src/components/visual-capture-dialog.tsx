@@ -108,6 +108,7 @@ export function VisualCaptureDialog({
           <p className="rounded-xl border border-border bg-secondary/35 p-3 text-xs text-muted-foreground">
             Gemini 3.1 Flash Image (1K): referência de US$ 0,067 por imagem de saída, além de possíveis custos de entrada e impostos. Valor estimado, não saldo de créditos do Hysto.
             {checking?" Verificando disponibilidade…":!available?" A geração paga ainda não está habilitada neste ambiente.":""}
+            {" "}A solicitação consome uma reserva diária; falhas do provedor podem consumir a cota mesmo sem imagem entregue.
           </p>
         )}
         {error&&<p role="alert" className="text-sm text-destructive">{error}</p>}
@@ -121,7 +122,8 @@ export function VisualCaptureDialog({
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" onClick={()=>onOpenChange(false)} disabled={busy}><X className="size-4"/> Fechar</Button>
           <Button type="button" onClick={()=>void generate()} disabled={!canGenerate}>
-            <Sparkles className="size-4"/>{busy?"Gerando…":"Confirmar e gerar imagem"}
+            <Sparkles className="size-4"/>
+            {type==="video"?"Geração de vídeo indisponível":busy?"Gerando…":"Confirmar e gerar imagem"}
           </Button>
         </div>
       </DialogContent>
