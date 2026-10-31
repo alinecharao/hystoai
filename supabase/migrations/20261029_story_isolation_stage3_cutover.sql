@@ -27,15 +27,27 @@ BEGIN
 END
 $guard$;
 
--- The previous functions operate on user_id+character_id, a scope that is
--- ambiguous once a character has >1 story. Prevent clients (including stale
--- browser tabs) from invoking those write paths after the new UI is enabled.
-REVOKE EXECUTE ON FUNCTION public.append_chat_user_message(uuid,uuid,text) FROM public,anon,authenticated;
-REVOKE EXECUTE ON FUNCTION public.claim_chat_generation(uuid,uuid) FROM public,anon,authenticated;
-REVOKE EXECUTE ON FUNCTION public.claim_assistant_regeneration(uuid,uuid) FROM public,anon,authenticated;
-REVOKE EXECUTE ON FUNCTION public.finish_assistant_regeneration(uuid,uuid,text) FROM public,anon,authenticated;
-REVOKE EXECUTE ON FUNCTION public.select_assistant_response_version(uuid,uuid) FROM public,anon,authenticated;
-REVOKE EXECUTE ON FUNCTION public.commit_chat_story_memory(uuid,uuid,text,text,text) FROM public,anon,authenticated;
+-- Legacy installations differ: some have an older memory RPC, others
+-- do not. Revoke the signatures that actually exist; a missing optional
+-- function must NOT abort cutover and leave all old writers accessible.
+-- Each signature is a fixed literal below, never derived from request input.
+DO $legacy$
+DECLARE signature text;
+BEGIN
+  FOREACH signature IN ARRAY ARRAY[
+    'append_chat_user_message(uuid,uuid,text)',
+    'claim_chat_generation(uuid,uuid)',
+    'claim_assistant_regeneration(uuid,uuid)',
+    'finish_assistant_regeneration(uuid,uuid,text)',
+    'select_assistant_response_version(uuid,uuid)',
+    'commit_chat_story_memory(uuid,uuid,text,text,text)'
+  ] LOOP
+    IF to_regprocedure('public.' || signature) IS NOT NULL THEN
+      EXECUTE format('REVOKE EXECUTE ON FUNCTION public.%s FROM PUBLIC, anon, authenticated', signature);
+    END IF;
+  END LOOP;
+END
+$legacy$;
 
 -- These release functions are safe to retain: both require the exact claim
 -- token AND user identity, and they do not select a conversation by character.
