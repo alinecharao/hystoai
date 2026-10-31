@@ -21,6 +21,7 @@ Só habilitar o POST quando, **após testes**, um operador configurar no servido
 - `GEMINI_API_KEY` em segredo de servidor (já usada na geração narrativa quando configurada)
 - `HYSTO_VISUAL_GENERATION_ENABLED=true`
 - `HYSTO_VISUAL_BILLABLE_OPT_IN=true`
+- `HYSTO_VISUAL_QUOTA_INSTALLED=true` somente após instalar e validar `20261031_visual_generation_quotas.sql` no ambiente autorizado. Esse banco limita a três reservas por usuário/dia e 30 no projeto/dia, mesmo entre instâncias diferentes. Nenhuma reserva é restituída automaticamente após timeout, pois uma cobrança externa pode ter ocorrido.
 
 **Não configure essas flags nesta entrega**. Requer antes limite de gasto durável por usuário, telemetria de custos e testes reais de provedor; o limite em memória de 90s é apenas uma barreira adicional de melhor esforço e não é robusto em ambientes com múltiplas instâncias.
 
