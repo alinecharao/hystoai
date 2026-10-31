@@ -108,11 +108,12 @@ export function CuratedMemoryPanel({
     try {
       const now = new Date().toISOString();
       if (noteId) {
-        const { data, error } = await supabase.from("story_memory_notes")
+        let query = supabase.from("story_memory_notes")
           .update({ category, body: content, updated_at: now })
           .eq("id", noteId).eq("user_id", userId)
-           .eq("character_id", characterId).eq("anchor_message_id", anchor)
-          .select("id").maybeSingle();
+          .eq("character_id", characterId).eq("anchor_message_id", anchor);
+        if (storyId) query = query.eq("story_id", storyId);
+        const { data, error } = await query.select("id").maybeSingle();
         if (error) throw error;
         if (!data) throw new Error("Esta anotação não está mais disponível. Recarregue a ficha.");
       } else {
@@ -137,12 +138,14 @@ export function CuratedMemoryPanel({
     setSaving(true);
     setFormError(null);
     try {
-      const { error } = await supabase.from("story_memory_notes").delete()
+      let query = supabase.from("story_memory_notes").delete()
         .eq("id", note.id).eq("user_id", userId)
         .eq("character_id", characterId).eq("anchor_message_id", anchor);
+      if (storyId) query = query.eq("story_id", storyId);
+      const { error } = await query;
       if (error) throw error;
       if (noteId === note.id) reset();
-      await qc.invalidateQueries({ queryKey: ["story-curated-notes", characterId, userId] });
+      await qc.invalidateQueries({ queryKey: ["story-curated-notes", characterId, userId, storyId] });
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Não foi possível remover a nota.");
     } finally {
