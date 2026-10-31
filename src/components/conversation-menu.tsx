@@ -304,14 +304,14 @@ export function ConversationMenu(props: Props) {
                 <SettingsAction label="Mensagens desde o início" icon={History} onClick={() => openAction(onShowHistory)} />
                 <SettingsAction label={exporting ? "Exportando..." : "Exportar história (.txt)"} icon={Download}
                   disabled={exporting || busy || blocked} onClick={() => openAction(() => onExport("txt"))} />
-                <SettingsAction label="Exportar backup completo (.json)" icon={FileJson}
+                <SettingsAction label="Exportar dados da história (.json)" icon={FileJson}
                   disabled={exporting || busy || blocked} onClick={() => openAction(() => onExport("json"))} />
                 <SettingsAction label="Limpar conversa" icon={Trash2} destructive disabled={busy || blocked}
                   onClick={() => openAction(onClearHistory)} />
               </div>
             </div>
 
-            <p className="text-xs text-muted-foreground">As opções alteram as próximas respostas. O histórico já salvo permanece intacto, salvo se você escolher excluí-lo.</p>
+            <p className="text-xs text-muted-foreground">A exportação JSON guarda seus dados, mas ainda não existe importação/restauração automática. As configurações alteram apenas as próximas respostas.</p>
           </section>
         )}
       </DialogContent>
