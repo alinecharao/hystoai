@@ -57,7 +57,11 @@ function LibraryPage() {
         .eq("character_id",characterId).select("id").maybeSingle();
       if(writeError)throw writeError;
       if(!data)throw new Error("Esta história não está mais disponível.");
-      await refresh();
+      await Promise.all([
+        refresh(),
+        qc.invalidateQueries({queryKey:["story",user.id,story.id]}),
+        qc.invalidateQueries({queryKey:["chat-rail-stories",user.id]}),
+      ]);
       setRenaming(null);
     } catch(err) {
       setError(err instanceof Error ? err.message : "Não foi possível atualizar a história.");
