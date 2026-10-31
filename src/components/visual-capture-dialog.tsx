@@ -53,6 +53,7 @@ export function VisualCaptureDialog({
         method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},
         body:JSON.stringify({
           type:"image",confirmed:true,characterId,messageId:anchor.id,
+          requestId:crypto.randomUUID(),
           ...(storyId?{storyId}:{}),prompt:prompt.trim(),aspectRatio,
         }),
       });
