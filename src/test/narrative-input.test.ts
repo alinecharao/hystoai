@@ -2,36 +2,27 @@ import { describe, expect, it } from "vitest";
 import { serializeUserMessageForModel } from "@/lib/narrative-input";
 
 describe("Story input formatting", () => {
-  it("recognizes Brazilian typographic quotation marks as spoken dialogue", () => {
-    expect(serializeUserMessageForModel("“Eu estou aqui.”")).toBe(
-      '<DIALOGUE speaker="protagonist">\nEu estou aqui.\n</DIALOGUE>',
-    );
+  it("preserves typographic and straight dialogue without claiming who spoke", () => {
+    const source = '“Vamos pra sala da mamãe?”\n"Vão reto que vocês chegam."';
+    expect(serializeUserMessageForModel(source)).toContain(source);
+    expect(serializeUserMessageForModel(source)).not.toContain('speaker="protagonist"');
   });
 
-  it("keeps straight quotation marks working", () => {
-    expect(serializeUserMessageForModel('"Tudo bem."')).toBe(
-      '<DIALOGUE speaker="protagonist">\nTudo bem.\n</DIALOGUE>',
-    );
+  it("preserves every paragraph and action in a long mixed narrative", () => {
+    const source = 'Assim que as portas do elevador se fecharam.\n\n*Eu me abaixei.*\n\n“Vamos pra sala?”\n\n[Não posso contar.]\n\nOs quatro chegaram antes de mim.';
+    const result = serializeUserMessageForModel(source);
+    expect(result).toBe(`<USER_NARRATIVE role="user" source="verbatim">\n${source}\n</USER_NARRATIVE>`);
+    expect(result).not.toContain("<MENTAL_SPEECH");
+    expect(result.indexOf("elevador")).toBeLessThan(result.indexOf("Os quatro chegaram"));
   });
 
-  it("distinguishes dialogue, private memories, mental speech and narrative text", () => {
-    const result = serializeUserMessageForModel(
-      "Ela entrou na sala.\n“Olá!”\n[Lembrei do dia anterior.]\n*Não posso contar.*\n‘Uma palavra citada’",
-    );
-    expect(result).toContain('<USER_TEXT>\nEla entrou na sala.\n</USER_TEXT>');
-    expect(result).toContain('<DIALOGUE speaker="protagonist">\nOlá!\n</DIALOGUE>');
-    expect(result).toContain('<MEMORY_OR_DREAM speaker="protagonist">\nLembrei do dia anterior.\n</MEMORY_OR_DREAM>');
-    expect(result).toContain('<MENTAL_SPEECH speaker="protagonist">\nNão posso contar.\n</MENTAL_SPEECH>');
-    expect(result).toContain('<USER_TEXT>\n‘Uma palavra citada’\n</USER_TEXT>');
+  it("does not transform actions into private thoughts or bracketed text into memory", () => {
+    const source = "*Ela entrou na sala.*\n[pensamento]Preciso ir.[/pensamento]";
+    expect(serializeUserMessageForModel(source)).toContain(source);
+    expect(serializeUserMessageForModel(source)).not.toContain("<MEMORY_OR_DREAM");
   });
 
-  it("does not treat partial or unbalanced quotation marks as speech", () => {
-    expect(serializeUserMessageForModel("“Oi, pensei.")).toBe(
-      "<USER_TEXT>\n“Oi, pensei.\n</USER_TEXT>",
-    );
-  });
-
-  it("preserves a blank input so the existing API validation can reject it", () => {
+  it("leaves empty content unchanged for API validation", () => {
     expect(serializeUserMessageForModel("   ")).toBe("   ");
   });
 });
