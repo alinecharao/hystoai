@@ -30,6 +30,8 @@ describe("supporting cast dialogue controls", () => {
     expect(prompt).toContain("quem fala".toUpperCase());
     expect(prompt).toContain("aspas para falas");
     expect(prompt).toContain("Não leem pensamentos");
+    expect(prompt).toContain("NÃO gere blocos de pensamento");
+    expect(prompt).toContain("não os deixe mudos");
     expect(prompt).toContain("MODO EQUILIBRADO");
     expect(buildSupportingCastPolicy("discreet")).toContain("MODO DISCRETO");
   });
