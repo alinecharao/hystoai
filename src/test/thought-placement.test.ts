@@ -6,6 +6,9 @@ describe("Contextual placement of fictional character thoughts", () => {
   it("prioritizes thoughts after the event that triggers them", () => {
     const instructions = buildThoughtPlacementPolicy(true);
     expect(instructions).toContain("APÓS o acontecimento");
+    expect(instructions).toContain("Se o personagem principal da IA estiver AUSENTE");
+    expect(instructions).toContain("não gere pensamentos dele");
+    expect(instructions).toContain("o usuário mudar explicitamente o foco narrativo");
     expect(instructions).toContain("Nunca reúna todos os pensamentos no início");
     expect(instructions).toContain("Pensamentos são opcionais");
     expect(instructions).toContain("APENAS FORMATO, NÃO FATOS DA HISTÓRIA");
