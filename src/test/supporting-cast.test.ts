@@ -36,6 +36,16 @@ describe("supporting cast dialogue controls", () => {
     expect(buildSupportingCastPolicy("discreet")).toContain("MODO DISCRETO");
   });
 
+  it("does not switch to Christopher's private viewpoint during Aline's courtroom scene", () => {
+    // Narrative regression: Christopher is absent; Aline, lawyers, and judge are present.
+    // This asserts the policy passed to providers, not a live model response.
+    const castPolicy = buildSupportingCastPolicy("balanced");
+    expect(castPolicy).toContain("PERSONAGEM PRINCIPAL AUSENTE");
+    expect(castPolicy).toContain("não gere pensamentos dele");
+    expect(castPolicy).toContain("nem corte para seu ponto de vista");
+    expect(castPolicy).toContain("secundários realmente presentes");
+  });
+
   it("isolates setting across users and independent stories", () => {
     const a=supportingCastStorageKey("user-a","story-a");
     expect(a).not.toBe(supportingCastStorageKey("user-a","story-b"));
