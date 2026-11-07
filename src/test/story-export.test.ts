@@ -30,6 +30,27 @@ describe("Story export", () => {
     const content = formatStoryAsText({ ...exportSample, assistant_versions: [] });
     expect(content).toContain("Texto original");
   });
+  it("includes current memory and story metadata in a v2 text snapshot", () => {
+    const snapshot: StoryExport = {
+      ...exportSample,
+      schema: "hysto-story-export-v2",
+      story_id: "story-1",
+      story: { id: "story-1", title: "Reencontro", is_legacy: false, archived_at: null },
+      memory_checkpoint: {
+        summary: "Luca chegou ontem.",
+        scene: "Cozinha ao amanhecer.",
+        known_facts: "Luna desconhece a surpresa.",
+        last_processed_message_id: "a1",
+        updated_at: "2026-10-24T18:00:05Z",
+      },
+    };
+    const content = formatStoryAsText(snapshot);
+    expect(content).toContain("História: Reencontro");
+    expect(content).toContain("Luca chegou ontem.");
+    expect(content).toContain("Luna desconhece a surpresa.");
+    expect(snapshot.messages).toHaveLength(2);
+  });
+
   it("leaves the original export structure untouched", () => {
     formatStoryAsText(exportSample);
     expect(exportSample.messages[1]?.content).toBe("Texto original");

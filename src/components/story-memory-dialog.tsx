@@ -34,6 +34,7 @@ export function StoryMemoryDialog({
   onOpenChange,
   characterId,
   userId,
+  storyId,
   latestSavedMessageId,
   responseVersionsEnabled,
   latestSavedRole,
@@ -44,6 +45,7 @@ export function StoryMemoryDialog({
   onOpenChange: (open: boolean) => void;
   characterId: string;
   userId: string;
+  storyId?: string;
   latestSavedMessageId: string | null;
   responseVersionsEnabled: boolean;
   latestSavedRole: string | null;
@@ -53,36 +55,33 @@ export function StoryMemoryDialog({
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const { data: lookup, isPending, error, refetch, isFetching } = useQuery({
-    queryKey: ["story-memory", characterId, userId, responseVersionsEnabled],
+    queryKey: ["story-memory", characterId, userId, storyId, responseVersionsEnabled],
     enabled: open,
     staleTime: 0,
     queryFn: async (): Promise<MemoryLookup> => {
-      const { data, error } = await supabase.from("story_memories")
+      let query=supabase.from(storyId ? "story_memory_checkpoints" : "story_memories")
         .select("summary, scene, known_facts, last_processed_message_id, updated_at")
-        .eq("character_id", characterId)
-        .eq("user_id", userId)
-        .maybeSingle();
+        .eq("character_id",characterId).eq("user_id",userId);
+      if(storyId)query=query.eq("story_id",storyId);
+      const {data,error}=await query.maybeSingle();
       if (error) throw error;
       if (!data?.last_processed_message_id) return { status: "missing", memory: null };
       // A cleared/new story or deleted checkpoint must never display
       // continuity facts from a past conversation with the same character.
-      const { data: anchor, error: anchorError } = await supabase.from("messages")
-        .select("id, role")
-        .eq("id", data.last_processed_message_id)
-        .eq("user_id", userId)
-        .eq("character_id", characterId)
-        .maybeSingle();
+      let anchorQuery=supabase.from("messages").select("id,role")
+        .eq("id",data.last_processed_message_id)
+        .eq("user_id",userId).eq("character_id",characterId);
+      if(storyId)anchorQuery=anchorQuery.eq("story_id",storyId);
+      const {data:anchor,error:anchorError}=await anchorQuery.maybeSingle();
       if (anchorError) throw anchorError;
       if (anchor?.role !== "assistant") return { status: "checkpoint_missing", memory: null };
       if (responseVersionsEnabled) {
-        const { data: discardedOriginal, error: versionError } = await supabase
-          .from("assistant_response_versions")
-          .select("id")
-          .eq("assistant_message_id", anchor.id)
-          .eq("user_id", userId)
-          .eq("character_id", characterId)
-          .eq("is_selected", true)
-          .maybeSingle();
+        let versionQuery=supabase.from("assistant_response_versions")
+          .select("id").eq("assistant_message_id",anchor.id)
+          .eq("user_id",userId).eq("character_id",characterId)
+          .eq("is_selected",true);
+        if(storyId)versionQuery=versionQuery.eq("story_id",storyId);
+        const {data:discardedOriginal,error:versionError}=await versionQuery.maybeSingle();
         if (versionError) throw versionError;
         if (discardedOriginal) return { status: "alternative_selected", memory: null };
       }
@@ -95,7 +94,9 @@ export function StoryMemoryDialog({
   );
   const needsBootstrap = Boolean(lookup && lookup.status !== "ready");
   const generateMemory = async () => {
-    if (creating || isFetching || latestSavedRole !== "assistant") return;
+    // /api/story-memory only supports legacy conversations. Never point a
+    // new story at its character-scoped endpoint or mix another story's facts.
+    if (storyId || creating || isFetching || latestSavedRole !== "assistant") return;
     if (!window.confirm(
       "Criar memória a partir das últimas 36 mensagens? Em histórias maiores, o resumo será parcial e poderá consumir sua cota de IA. Nenhuma mensagem será apagada.",
     )) return;
@@ -134,6 +135,7 @@ export function StoryMemoryDialog({
             open={open}
             characterId={characterId}
             userId={userId}
+            {...(storyId ? {storyId} : {})}
             selectedMessage={selectedMessage}
             onSelectionConsumed={onSelectionConsumed}
           />
@@ -150,8 +152,9 @@ export function StoryMemoryDialog({
                   : "Ainda não existe um resumo de memória salvo para esta conversa. Recarregar não cria uma nova memória."}
             </p>
           )}
+          {storyId && !data && <p className="text-xs text-muted-foreground">Para esta história, use suas memórias escolhidas manualmente. O resumo automático ainda não está habilitado.</p>}
           {createError && <p role="alert" className="text-sm text-destructive">{createError}</p>}
-          {needsBootstrap && latestSavedRole !== "assistant" && (
+          {needsBootstrap && latestSavedRole !== "assistant" && !storyId && (
             <p className="text-xs text-muted-foreground">Conclua a mensagem pendente antes de criar a memória.</p>
           )}
           {!isPending && !error && data && (
@@ -171,7 +174,7 @@ export function StoryMemoryDialog({
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          {needsBootstrap && (
+          {needsBootstrap && !storyId && (
             <Button type="button" size="sm" disabled={creating || isFetching || latestSavedRole !== "assistant"}
               onClick={() => void generateMemory()}>
               <Brain className="size-4" /> {creating ? "Criando memória..." : "Gerar resumo com IA"}

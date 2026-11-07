@@ -47,6 +47,8 @@ export const Route = createFileRoute("/api/story-memory")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        if (process.env["HYSTO_MULTI_STORIES"] === "true")
+          return reply(409,{error:"Abra a memória da história pelo novo chat. O resumidor antigo foi desativado para preservar o isolamento."});
         const token = request.headers.get("authorization")?.replace(/^Bearer /i, "");
         if (!token) return reply(401, { error: "Entre novamente para gerar a memória." });
         const raw: unknown = await request.json().catch(() => null);
