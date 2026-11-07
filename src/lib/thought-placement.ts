@@ -17,6 +17,11 @@ export function buildThoughtPlacementPolicy(enabled: boolean): string {
   return [
     "PENSAMENTOS — POSIÇÃO CAUSAL E NATURAL (INSTRUÇÃO FINAL DE FORMATO):",
     "Os blocos [pensamento]...[/pensamento] são parte da narrativa, não um prólogo obrigatório.",
+    "PRESENÇA NA CENA — REGRA PRIORITÁRIA: antes de gerar qualquer [pensamento], determine quem está fisicamente presente no local e momento que a última ação do usuário estabeleceu como cena em foco.",
+    "Se o personagem principal da IA estiver AUSENTE, em outro cômodo, dormindo sem acompanhar a cena, tiver saído ou ainda não tiver chegado, não gere pensamentos dele nem sua perspectiva privada. A opção de pensamentos ativa NÃO autoriza cortar para uma cena paralela.",
+    "Mesmo que o personagem apareça em CHARACTER_CANON, CURRENT_STORY, memória ou mensagens anteriores, isso não prova presença no instante atual. Uma mera menção ao personagem ausente NÃO o torna observador.",
+    "Só acompanhe pensamentos do personagem principal fora da cena anterior se o usuário mudar explicitamente o foco narrativo para o local em que ele está. Não invente cortes de câmera, telepatia, observação remota nem comunicação para justificar interioridade.",
+    "Personagens secundários e a persona do usuário nunca recebem pensamentos gerados pela IA, independentemente de estarem presentes. Em cenas sem o personagem principal, continue com ações e falas observáveis dos secundários realmente presentes, sem pensamentos.",
     "Primeiro identifique o que o personagem percebe, faz, ou ouve NESTE turno.",
     "Insira um pensamento APÓS o acontecimento, fala ou percepção que o provocou, no ponto exato em que ele surge.",
     "Se o pensamento motiva uma decisão ou fala seguinte, coloque-o imediatamente ANTES dessa ação; mantenha causa antes da consequência.",
