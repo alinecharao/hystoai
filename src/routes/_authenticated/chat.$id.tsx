@@ -506,6 +506,20 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
       }
     });
   };
+  /** SDK stop() does not reliably trigger onError/onFinish on cancellation.
+   * Reconcile against saved rows and release the local send lock explicitly,
+   * so the user can resume an interrupted turn without duplicating its UUID.
+   */
+  const stopAndReconcile = () => {
+    if (!sendingLock.current && !busy) return;
+    stop();
+    regenerateIdRef.current = null;
+    retryMessageIdRef.current = null;
+    pendingClientMessageIdRef.current = null;
+    submittedTurnRef.current = null;
+    void reconcileFinishedTurn(true);
+  };
+
   const readableChatError = useMemo(() => {
     const raw = error?.message?.trim();
     if (!raw) return "Não foi possível obter resposta.";
@@ -1099,7 +1113,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
               />
               <PromptInputSubmit
                 status={status}
-                onStop={stop}
+                onStop={stopAndReconcile}
                 disabled={versionChanging || deletingMessages || (!busy && !input.trim())}
                 className="mr-2 size-10 shrink-0 self-center rounded-full bg-chat-action text-primary-foreground hover:bg-chat-action/90"
               />
