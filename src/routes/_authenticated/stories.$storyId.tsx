@@ -1094,8 +1094,8 @@ function ChatWindow({ character, story, stored }: { character: Character; story:
             <PromptInput
               className="relative rounded-3xl border-border bg-chat-glass shadow-lg"
               onSubmit={(message) => {
-                const text = message.text.trim();
-                if (!text || busy || versionChanging || sendingLock.current) return;
+                const text = message.text; // Keep the author's original paragraph breaks.
+                if (!text.trim() || busy || versionChanging || sendingLock.current) return;
                 setInput("");
                 sendOnce(text);
               }}
