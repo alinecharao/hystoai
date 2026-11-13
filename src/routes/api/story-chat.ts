@@ -234,6 +234,9 @@ export const Route = createFileRoute("/api/story-chat")({
         responseVersions: process.env["HYSTO_MULTI_STORIES"] === "true" &&
           process.env["HYSTO_RESPONSE_VERSIONS"] === "true" &&
           process.env["HYSTO_ATOMIC_APPEND"] === "true",
+        recovery: process.env["HYSTO_ENABLE_CHAT_RECOVERY"] === "true" &&
+          process.env["HYSTO_ATOMIC_APPEND"] === "true" &&
+          process.env["HYSTO_MULTI_STORIES"] === "true",
       }), {
         headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
       }),
