@@ -370,7 +370,7 @@ export const Route = createFileRoute("/api/story-chat")({
             return json(409, "Apenas a última resposta salva pode gerar versões alternativas.");
           }
           const parent = history?.find((item) => item.id === latestMessage.reply_to_message_id);
-          if (!parent || parent.role !== "user" || parent.content.trim() !== text) {
+          if (!parent || parent.role !== "user" || parent.content !== text) {
             return json(409, "A mensagem original não corresponde ao histórico. Atualize a conversa.");
           }
           regenerationParentId = parent.id;
@@ -386,7 +386,7 @@ export const Route = createFileRoute("/api/story-chat")({
           // Only the last persisted user turn may be recovered. Any assistant
           // after it means the turn has already completed; never duplicate it.
           if (!latestMessage || latestMessage.id !== body.retryMessageId ||
-              latestMessage.role !== "user" || latestMessage.content.trim() !== text) {
+              latestMessage.role !== "user" || latestMessage.content !== text) {
             return json(409, "A mensagem não está pendente de resposta. Atualize o histórico.");
           }
         } else if (!regenerating && latestMessage?.role === "user") {
