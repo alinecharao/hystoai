@@ -53,6 +53,11 @@ create table public.assistant_regeneration_claims(
  user_id uuid not null,character_id uuid not null,
  claim_token uuid not null default gen_random_uuid(),claimed_at timestamptz not null default now()
 );
+-- Match the RLS-enabled legacy tables seen in the actual installation.
+-- The privileged story RPCs remain responsible for lease mutations.
+alter table public.story_memories enable row level security;
+alter table public.chat_generation_claims enable row level security;
+alter table public.assistant_regeneration_claims enable row level security;
 alter table public.messages enable row level security;
 create policy messages_owner on public.messages for all to authenticated
  using (user_id=auth.uid()) with check(user_id=auth.uid());
