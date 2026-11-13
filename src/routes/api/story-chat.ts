@@ -8,9 +8,10 @@ import { serializeUserMessageForModel } from "@/lib/narrative-input";
 import { buildStoryMemoryHistory, readStoryMemoryJson, selectSafeStoryMemory, type StoryMemorySnapshot } from "@/lib/story-memory";
 import { getGeminiModelCandidates, isGeminiModelUnavailableError } from "@/lib/ai/gemini-models";
 import { CURATED_NOTE_LIMIT, formatCuratedNotes, type CuratedNote } from "@/lib/curated-story-memory";
-import { buildCharacterKnowledgePolicy } from "@/lib/character-knowledge";
-import { buildSupportingCastPolicy } from "@/lib/supporting-cast";
+import { buildCharacterKnowledgePolicy, parseCharacterKnowledgeMode } from "@/lib/character-knowledge";
+import { buildSupportingCastPolicy, parseSupportingCastMode } from "@/lib/supporting-cast";
 import { buildThoughtPlacementPolicy } from "@/lib/thought-placement";
+import { buildCompactNarrativeSystem, selectGroqNarrativeMessages } from "@/lib/ai/narrative-context";
 
 // Remove only obvious consecutive loops; preserve ordinary literary repetition.
 function removeGenerationLoops(value: string): string {
@@ -696,6 +697,38 @@ export const Route = createFileRoute("/api/story-chat")({
           );
         }
 
+        // Groq needs a smaller, chronology-safe prompt. All character canon,
+        // user persona, confirmed memory and the LATEST user message remain
+        // verbatim; only redundant generic guidance and older turns shrink.
+        const compactGroqSystem = buildCompactNarrativeSystem({
+          characterName: character.name,
+          persona: extractTaggedSection(system, "USER_PERSONA"),
+          canon: promptSections.canon,
+          background: stripTaggedSections(character.background?.trim() ?? ""),
+          currentStory: promptSections.currentStory,
+          styleExamples: promptSections.styleExamples,
+          curatedMemory: curatedMemoryPrompt,
+          memorySummary: storyMemory?.summary ?? "",
+          memoryScene: storyMemory?.scene ?? "",
+          memoryKnowledge: storyMemory?.known_facts ?? "",
+          knowledgeMode: parseCharacterKnowledgeMode(body.knowledgeMode),
+          castMode: parseSupportingCastMode(body.supportingCastMode),
+          thoughtsEnabled: body.thoughts === true,
+        });
+        const groqCanHandleTurn = selectGroqNarrativeMessages(
+          [{ role: "system", content: effectiveSystem }, ...messages],
+          compactGroqSystem,
+        ) !== null;
+        if (!groqCanHandleTurn && requestedProvider === "groq") {
+          return json(413, "Esta mensagem ultrapassa o contexto seguro estimado do Groq. Nenhum texto foi cortado ou salvo. Use Automático ou outro provedor com mais contexto.");
+        }
+        const eligibleOrderedProviders = orderedProviders.filter(
+          (provider) => provider.id !== "groq" || groqCanHandleTurn,
+        );
+        if (eligibleOrderedProviders.length === 0) {
+          return json(413, "A mensagem não cabe integralmente no contexto disponível neste provedor. Nenhuma parte foi cortada ou salva. Selecione outro provedor.");
+        }
+
         // Preflight the provider selection before persisting a new user turn.
         // A configuration/quota failure must not strand a message pending when
         // generation never had a chance to begin. Server-side RPCs still
@@ -718,7 +751,7 @@ export const Route = createFileRoute("/api/story-chat")({
 
           let lastResponse: Response | null = null;
 
-          for (const provider of orderedProviders) {
+          for (const provider of eligibleOrderedProviders) {
             const headers = new Headers(init?.headers);
             headers.set("Authorization", `Bearer ${provider.apiKey}`);
             headers.set("Content-Type", "application/json");
@@ -747,17 +780,35 @@ export const Route = createFileRoute("/api/story-chat")({
                 const conversationMessages = promptMessages.filter(
                   (message) => message["role"] !== "system",
                 );
-
+                const isNarrativeGeneration = systemMessages.some(
+                  (message) => message["content"] === effectiveSystem,
+                );
+                const narrativeContext = isNarrativeGeneration
+                  ? selectGroqNarrativeMessages(
+                      promptMessages.map((message) => ({
+                        ...message,
+                        role: message["role"],
+                        content: message["content"],
+                      })),
+                      compactGroqSystem,
+                    )
+                  : null;
+                if (isNarrativeGeneration && !narrativeContext) {
+                  // Should be caught before append; never truncate a user
+                  // message after it has been persisted.
+                  return new Response(JSON.stringify({ error: "A mensagem completa ultrapassa o limite de contexto do Groq." }), {
+                    status: 413, headers: { "Content-Type": "application/json" },
+                  });
+                }
                 const groqMaxCompletionTokens = Math.min(
                   typeof originalBody["max_tokens"] === "number"
                     ? originalBody["max_tokens"]
                     : 1600,
                   1600,
                 );
-
                 requestBody = {
                   ...requestBody,
-                  messages: [
+                  messages: narrativeContext ?? [
                     ...systemMessages.slice(0, 1),
                     ...conversationMessages.slice(-4),
                   ],
@@ -766,7 +817,6 @@ export const Route = createFileRoute("/api/story-chat")({
                     ? "low"
                     : "none",
                 };
-
                 delete requestBody["max_tokens"];
               }
 
