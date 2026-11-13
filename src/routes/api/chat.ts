@@ -816,10 +816,10 @@ export const Route = createFileRoute("/api/chat")({
                     Boolean(message) && typeof message === "object",
                 );
                 const systemMessages = promptMessages.filter(
-                  (message) => message["role"] === "system",
+                  (message) => message["role"] === "system" || message["role"] === "developer",
                 );
                 const conversationMessages = promptMessages.filter(
-                  (message) => message["role"] !== "system",
+                  (message) => message["role"] !== "system" && message["role"] !== "developer",
                 );
                 const isNarrativeGeneration = systemMessages.some(
                   (message) => message["content"] === effectiveSystem,
