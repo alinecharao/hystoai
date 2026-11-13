@@ -43,6 +43,13 @@
       "when": 1792542663921,
       "tag": "0005_chat_generation_claims",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794610412536,
+      "tag": "0006_character_photos_owner_read",
+      "breakpoints": true
     }
   ]
 }
