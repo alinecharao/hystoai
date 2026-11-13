@@ -86,7 +86,7 @@ describe("Compact narrative truth hierarchy", () => {
     expect(prompt).not.toContain("Resumo antigo divergente");
     expect(prompt).toContain("STYLE_EXAMPLES contém SOMENTE estilo");
     expect(prompt).toContain("Não reescreva nem resuma o turno");
-    expect(prompt).toContain("Personagens");
+    expect(prompt).toContain("SECUNDÁRIOS: personagens presentes");
     expect(prompt).toContain("efetivamente".toUpperCase().slice(0, 4));
     expect(prompt).toContain("somente do personagem principal da IA");
   });
