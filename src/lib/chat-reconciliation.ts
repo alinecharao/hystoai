@@ -31,3 +31,19 @@ export function latestPendingUserTurn<T extends PersistedMessageSnapshot>(rows: 
 export function hasPersistedUserTurn(rows: readonly PersistedMessageSnapshot[], clientMessageId: string): boolean {
   return rows.some((row) => row.id === clientMessageId && row.role === "user");
 }
+
+/**
+ * A streaming error may arrive only through the SDK onError callback.
+ * Restore submitted text only when its exact client UUID is absent from the
+ * authoritative server snapshot; otherwise keep the persisted turn pending
+ * for recovery rather than allowing an accidental duplicate send.
+ */
+export function draftAfterFailedSubmission(
+  rows: readonly PersistedMessageSnapshot[],
+  clientMessageId: string,
+  submittedText: string,
+  currentDraft: string,
+): string {
+  if (hasPersistedUserTurn(rows, clientMessageId) || currentDraft.trim()) return currentDraft;
+  return submittedText;
+}

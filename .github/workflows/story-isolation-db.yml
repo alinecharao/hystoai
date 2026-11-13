@@ -43,10 +43,15 @@ jobs:
       - uses: actions/checkout@v4
       - name: Create synthetic legacy schema and records
         run: psql -X -v ON_ERROR_STOP=1 -f supabase/verification/20261029_story_isolation_fixture.sql
+      - name: Verify legacy integrity before any schema changes
+        run: psql -X -v ON_ERROR_STOP=1 -f supabase/verification/20261113_story_migration_preflight.sql
       - name: Apply staged migrations to ephemeral database
         run: |
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261029_story_isolation_stage1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261029_story_isolation_stage2_rpcs.sql
+          # Mandatory read-only check before any legacy write permissions
+          # are revoked. Simulates the production cutover decision boundary.
+          psql -X -v ON_ERROR_STOP=1 -f supabase/verification/20261113_story_cutover_readiness.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261029_story_isolation_stage3_cutover.sql
           # The Lovable clone lacks an optional legacy memory RPC. Repeat
           # the cutover without it to test idempotent, safe migration.

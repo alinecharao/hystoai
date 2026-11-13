@@ -22,8 +22,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { supabase } from "@/integrations/supabase/client";
 import { activeChatTurnIds } from "@/lib/chat-validation";
 import { readDraft, saveDraft } from "@/lib/chat-drafts";
+import { responseVersionEntries } from "@/lib/response-version-history";
+import { historyPageRange, historyPageRows } from "@/lib/history-pagination";
 import { readStoryExport, saveStoryExportFile } from "@/lib/story-export";
-import { hasPersistedUserTurn, latestPendingUserTurn, toPersistedChatMessages } from "@/lib/chat-reconciliation";
+import { draftAfterFailedSubmission, latestPendingUserTurn, toPersistedChatMessages } from "@/lib/chat-reconciliation";
 import type { MemoryMessageSelection } from "@/components/curated-memory-panel";
 import {
   CHARACTER_KNOWLEDGE_LABELS, DEFAULT_CHARACTER_KNOWLEDGE_MODE,
@@ -107,16 +109,18 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   const { user } = Route.useRouteContext();
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const { data: responseVersionsEnabled = false } = useQuery({
+  const { data: chatFeatureFlags } = useQuery({
     queryKey: ["chat-feature-response-versions"],
     queryFn: async () => {
       const response = await fetch("/api/chat", { method: "GET", cache: "no-store" });
-      if (!response.ok) return false;
-      const result = await response.json() as { responseVersions?: boolean };
-      return result.responseVersions === true;
+      if (!response.ok) return { responseVersions: false, recovery: false };
+      const result = await response.json() as { responseVersions?: boolean; recovery?: boolean };
+      return { responseVersions: result.responseVersions === true, recovery: result.recovery === true };
     },
     staleTime: 30_000,
   });
+  const responseVersionsEnabled = chatFeatureFlags?.responseVersions ?? false;
+  const recoveryEnabled = chatFeatureFlags?.recovery ?? false;
   const { data: responseVersions = [] } = useQuery({
     queryKey: ["response-versions", character.id],
     enabled: responseVersionsEnabled,
@@ -137,6 +141,34 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
     },
   });
   const [versionViewerMessageId, setVersionViewerMessageId] = useState<string | null>(null);
+  // Always fetch the original and its alternatives by persisted message ID.
+  // Historical responses may be older than the 100-message chat window.
+  const { data: viewedVersions, isPending: viewedVersionsLoading, error: viewedVersionsError } = useQuery({
+    queryKey: ["response-version-detail", user.id, character.id, versionViewerMessageId],
+    enabled: responseVersionsEnabled && versionViewerMessageId !== null,
+    queryFn: async () => {
+      if (!versionViewerMessageId) throw new Error("Mensagem não selecionada.");
+      const { data: source, error: sourceError } = await supabase.from("messages")
+        .select("id, content, role")
+        .eq("id", versionViewerMessageId)
+        .eq("user_id", user.id)
+        .eq("character_id", character.id)
+        .eq("role", "assistant")
+        .maybeSingle();
+      if (sourceError || !source) throw new Error("Não foi possível carregar a resposta original.");
+      const { data: alternatives, error: alternativesError } = await supabase.from("assistant_response_versions")
+        .select("id, content, is_selected")
+        .eq("user_id", user.id)
+        .eq("character_id", character.id)
+        .eq("assistant_message_id", source.id)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true });
+      if (alternativesError) throw new Error("Não foi possível carregar as versões desta resposta.");
+      return responseVersionEntries(source.content, alternatives ?? []);
+    },
+    staleTime: 0,
+  });
+
   const [versionChanging, setVersionChanging] = useState(false);
   const [deletingMessages, setDeletingMessages] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -178,6 +210,8 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   const [historyHasMore, setHistoryHasMore] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const historyRequestIdRef = useRef(0);
+  const historyScrollRef = useRef<HTMLDivElement | null>(null);
   const [aiProvider, setAiProvider] = useState<AiProvider>("auto");
   const [knowledgeMode, setKnowledgeMode] = useState<CharacterKnowledgeMode>(DEFAULT_CHARACTER_KNOWLEDGE_MODE);
   const [supportingCastMode, setSupportingCastMode] = useState<SupportingCastMode>(DEFAULT_SUPPORTING_CAST_MODE);
@@ -336,19 +370,21 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   };
 
   const loadHistoryPage = async (page: number) => {
+    const requestId = ++historyRequestIdRef.current;
     setHistoryLoading(true);
     setHistoryError(null);
     try {
-      const start = page * 30;
+      const bounds = historyPageRange(page);
       const { data, error } = await supabase.from("messages")
         .select("id, role, content")
         .eq("character_id", character.id)
         .eq("user_id", user.id)
         .order("created_at", { ascending: true })
         .order("id", { ascending: true })
-        .range(start, start + 30);
+        .range(bounds.from, bounds.to);
       if (error) throw error;
-      let pageRows = (data ?? []).slice(0, 30);
+      const pageResult = historyPageRows(data ?? []);
+      let pageRows = pageResult.rows;
       if (responseVersionsEnabled) {
         const assistantIds = pageRows.filter((item) => item.role === "assistant").map((item) => item.id);
         if (assistantIds.length > 0) {
@@ -363,19 +399,24 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
           pageRows = pageRows.map((item) => ({ ...item, content: selectedById.get(item.id) ?? item.content }));
         }
       }
+      if (requestId !== historyRequestIdRef.current) return;
       setHistoryRows(pageRows);
-      setHistoryHasMore((data ?? []).length > 30);
+      setHistoryHasMore(pageResult.hasMore);
       setHistoryPage(page);
+      if (historyScrollRef.current) historyScrollRef.current.scrollTop = 0;
     } catch (error) {
-      setHistoryError(error instanceof Error ? error.message : "Não foi possível carregar o histórico.");
+      if (requestId === historyRequestIdRef.current) {
+        setHistoryError(error instanceof Error ? error.message : "Não foi possível carregar o histórico.");
+      }
     } finally {
-      setHistoryLoading(false);
+      if (requestId === historyRequestIdRef.current) setHistoryLoading(false);
     }
   };
 
   const initial = useMemo<UIMessage[]>(() => toPersistedChatMessages(stored), [stored]);
   const regenerateIdRef = useRef<string | null>(null);
   const pendingClientMessageIdRef = useRef<string | null>(null);
+  const submittedTurnRef = useRef<{ id: string; text: string } | null>(null);
   const retryMessageIdRef = useRef<string | null>(null);
   const transport = useMemo(
     () => new DefaultChatTransport({
@@ -418,27 +459,38 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
       regenerateIdRef.current = null;
       retryMessageIdRef.current = null;
       pendingClientMessageIdRef.current = null;
+      submittedTurnRef.current = null;
       // Keep the lock until the persisted conversation is synchronized.
       void reconcileFinishedTurn(fromAlternative);
     },
     onError: () => {
       const fromAlternative = regenerateIdRef.current !== null;
+      const failedTurn = submittedTurnRef.current;
+      submittedTurnRef.current = null;
       regenerateIdRef.current = null;
       retryMessageIdRef.current = null;
       pendingClientMessageIdRef.current = null;
-      void reconcileFinishedTurn(fromAlternative);
+      // Stream errors don't always reject sendMessage. Restore unsaved text
+      // only after confirming the client UUID does not exist on the server.
+      void reconcileFinishedTurn(fromAlternative, failedTurn);
     },
   });
 
-  async function reconcileFinishedTurn(restorePersistedState: boolean) {
+  async function reconcileFinishedTurn(
+    restorePersistedState: boolean,
+    failedTurn: { id: string; text: string } | null = null,
+  ) {
     try {
       const [fresh] = await Promise.all([
         qc.fetchQuery(messagesQuery(character.id)),
         qc.invalidateQueries({ queryKey: ["response-versions", character.id] }),
       ]);
+      if (failedTurn) {
+        setInput((current) => draftAfterFailedSubmission(fresh, failedTurn.id, failedTurn.text, current));
+      }
       // Regeneration SDK replies have temporary IDs. Always use the real
       // database rows instead of reapplying a stale render-time initial array.
-      if (restorePersistedState) setMessages(toPersistedChatMessages(fresh));
+      if (restorePersistedState || failedTurn) setMessages(toPersistedChatMessages(fresh));
     } catch (syncError) {
       console.warn("hysto_chat_reconciliation_failed", syncError);
       // Never guess an ID or clear a conversation after a failed refresh.
@@ -469,15 +521,17 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
     setErrorHidden(true);
     const clientMessageId = crypto.randomUUID();
     pendingClientMessageIdRef.current = clientMessageId;
+    submittedTurnRef.current = { id: clientMessageId, text };
     void sendMessage({ text }).catch(async (error) => {
       console.error("chat_send_failed", error);
       try {
         const saved = await qc.fetchQuery(messagesQuery(character.id));
         // Only an unsaved client turn is restored as draft. A saved turn must
         // remain pending for recovery, never resent as a duplicate.
-        if (!hasPersistedUserTurn(saved, clientMessageId)) {
-          setInput((current) => current.trim() ? current : text);
-        }
+        setInput((current) => draftAfterFailedSubmission(saved, clientMessageId, text, current));
+        // A failed request must not leave an optimistic, unsaved SDK turn
+        // visible after the authoritative database snapshot is available.
+        setMessages(toPersistedChatMessages(saved));
       } catch (syncError) {
         console.warn("chat_send_verify_failed", syncError);
         // Unknown persistence status: do not prompt a potentially duplicate send.
@@ -485,10 +539,30 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
         if (pendingClientMessageIdRef.current === clientMessageId) {
           pendingClientMessageIdRef.current = null;
         }
+        if (submittedTurnRef.current?.id === clientMessageId) {
+          submittedTurnRef.current = null;
+        }
         sendingLock.current = false;
       }
     });
   };
+  /** SDK stop() does not reliably trigger onError/onFinish on cancellation.
+   * Reconcile against saved rows and release the local send lock explicitly,
+   * so the user can resume an interrupted turn without duplicating its UUID.
+   */
+  const stopAndReconcile = () => {
+    if (!sendingLock.current && !busy) return;
+    const interruptedTurn = submittedTurnRef.current;
+    stop();
+    regenerateIdRef.current = null;
+    retryMessageIdRef.current = null;
+    pendingClientMessageIdRef.current = null;
+    submittedTurnRef.current = null;
+    // A cancellation is also a failed send if the server never saved it.
+    // Rehydrate from the authoritative server state before restoring text.
+    void reconcileFinishedTurn(true, interruptedTurn);
+  };
+
   const readableChatError = useMemo(() => {
     const raw = error?.message?.trim();
     if (!raw) return "Não foi possível obter resposta.";
@@ -748,26 +822,26 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
           <DialogDescription>Versões antigas estão disponíveis para consulta. A continuidade permanece vinculada à versão escolhida quando a conversa avançou.</DialogDescription>
           {versionViewerMessageId && (
             <div className="space-y-3">
-              {(() => {
-                const base = stored.find((item) => item.id === versionViewerMessageId);
-                const alternatives = responseVersions.filter((item) => item.assistant_message_id === versionViewerMessageId);
-                return [{ id: "original", content: base?.content ?? "", is_selected: !alternatives.some((item) => item.is_selected) },
-                  ...alternatives].map((item, index) => (
-                    <div key={item.id} className="rounded-xl border border-border p-3">
-                      <p className="mb-2 text-xs font-medium text-muted-foreground">Versão {index + 1}{item.is_selected ? " · Escolhida" : ""}</p>
-                      <div className="whitespace-pre-wrap break-words text-sm">{item.content}</div>
-                    </div>
-                  ));
-              })()}
+              {viewedVersionsLoading && <p className="text-sm text-muted-foreground">Carregando versões...</p>}
+              {viewedVersionsError && <p role="alert" className="text-sm text-destructive">{viewedVersionsError.message}</p>}
+              {viewedVersions?.map((item, index) => (
+                <div key={item.id} className="rounded-xl border border-border p-3">
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">Versão {index + 1}{item.selected ? " · Escolhida" : ""}</p>
+                  <div className="whitespace-pre-wrap break-words text-sm">{item.content}</div>
+                </div>
+              ))}
             </div>
           )}
         </DialogContent>
       </Dialog>
-      <Dialog open={historyDialog} onOpenChange={setHistoryDialog}>
-        <DialogContent className="flex max-h-[85dvh] w-[calc(100%-2rem)] max-w-2xl flex-col overflow-hidden">
+      <Dialog open={historyDialog} onOpenChange={(open) => {
+        setHistoryDialog(open);
+        if (!open) historyRequestIdRef.current += 1;
+      }}>
+        <DialogContent className="flex h-[85dvh] max-h-[760px] w-[calc(100%-2rem)] max-w-2xl flex-col overflow-hidden">
           <DialogTitle>Histórico desde o início</DialogTitle>
           <DialogDescription>Consulte as mensagens antigas sem alterar a conversa atual. Exibindo até 30 por página, em ordem cronológica.</DialogDescription>
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto py-2">
+          <div ref={historyScrollRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain py-2">
             {historyLoading && <p className="text-sm text-muted-foreground">Carregando mensagens...</p>}
             {historyError && <p className="text-sm text-destructive">{historyError}</p>}
             {!historyLoading && !historyError && historyRows.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma mensagem nesta página.</p>}
@@ -775,6 +849,12 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
               <div key={message.id} className="rounded-xl border border-border/60 p-3">
                 <p className="mb-2 text-xs font-semibold text-muted-foreground">{message.role === "user" ? "Você" : character.name}</p>
                 <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">{message.content}</div>
+                {responseVersionsEnabled && message.role === "assistant" && (
+                  <Button type="button" variant="outline" size="sm" className="mt-3"
+                    onClick={() => { setHistoryDialog(false); setVersionViewerMessageId(message.id); }}>
+                    Consultar versões desta resposta
+                  </Button>
+                )}
               </div>
             ))}
           </div>
@@ -837,6 +917,15 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
         <Conversation className="relative z-10 min-h-0">
           <ConversationContent className="mx-auto w-full max-w-3xl gap-5 px-4 pb-8 pt-6 sm:px-5 sm:py-8">
             {character.opening_scene && <Bubble role="assistant" text={character.opening_scene} character={character} showThoughts={showThoughts} />}
+            {visibleMessageStart === 0 && stored.length >= 100 && (
+              <div className="pb-2 text-center">
+                <p className="mb-2 text-xs text-muted-foreground">A tela carrega somente as mensagens mais recentes; consulte todas as páginas no histórico.</p>
+                <Button type="button" variant="outline" size="sm"
+                  onClick={() => { setHistoryDialog(true); void loadHistoryPage(0); }}>
+                  Consultar histórico completo
+                </Button>
+              </div>
+            )}
             {visibleMessageStart > 0 && (
               <div className="py-2 text-center">
                 <Button type="button" variant="outline" size="sm" onClick={() => setVisibleCount((count) => count + 15)}>
@@ -865,6 +954,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
                   ? "Aguarde a sincronização da última resposta."
                   : "Esta resposta não tem um vínculo de geração confirmado. Gere uma nova resposta em uma conversa de teste.";
               const canGenerateFromUser =
+                recoveryEnabled &&
                 message.role === "user" &&
                 isLatestMessage &&
                 !error &&
@@ -995,7 +1085,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
               <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
                 <p>{readableChatError}</p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {stored[stored.length - 1]?.role === "user" ? (
+                  {stored[stored.length - 1]?.role === "user" && recoveryEnabled ? (
                     <Button
                       type="button"
                       variant="outline"
@@ -1007,6 +1097,8 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
                       <RotateCcw className="size-3.5" />
                       Recuperar resposta
                     </Button>
+                  ) : stored[stored.length - 1]?.role === "user" ? (
+                    <p className="text-xs text-muted-foreground">A mensagem foi preservada, mas a recuperação automática ainda não está habilitada neste ambiente. Não envie novamente sem verificar o histórico.</p>
                   ) : (
                     <p className="text-xs text-muted-foreground">
                       Não há mensagem pendente para recuperar.
@@ -1066,14 +1158,14 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
             <PromptInput
               className="relative rounded-3xl border-border bg-chat-glass shadow-lg"
               onSubmit={(message) => {
-                const text = message.text.trim();
-                if (!text || busy || versionChanging || sendingLock.current) return;
+                const text = message.text; // Keep the author's original paragraph breaks.
+                if (!text.trim() || busy || versionChanging || sendingLock.current) return;
                 setInput("");
                 sendOnce(text);
               }}
             >
               <PromptInputTextarea
-                autoFocus
+                autoFocus={false}
                 rows={1}
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
@@ -1082,7 +1174,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
               />
               <PromptInputSubmit
                 status={status}
-                onStop={stop}
+                onStop={stopAndReconcile}
                 disabled={versionChanging || deletingMessages || (!busy && !input.trim())}
                 className="mr-2 size-10 shrink-0 self-center rounded-full bg-chat-action text-primary-foreground hover:bg-chat-action/90"
               />

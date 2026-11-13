@@ -33,6 +33,20 @@ begin
   if v_count <> 0 then raise exception 'Legacy backfill failed'; end if;
   if not exists (select 1 from public.story_memory_checkpoints where summary='Fato original')
     then raise exception 'Legacy memory was not preserved'; end if;
+  -- The original memory record must retain its stale provenance verbatim,
+  -- but the new checkpoint must not contain an invalid foreign key.
+  if not exists (
+    select 1 from public.story_memories m
+    where m.character_id='33333333-3333-4333-8333-333333333334'
+      and m.summary='Memória legada com ponteiro ausente'
+      and m.last_processed_message_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  ) then raise exception 'Original invalid memory provenance was altered'; end if;
+  if not exists (
+    select 1 from public.story_memory_checkpoints c
+    where c.character_id='33333333-3333-4333-8333-333333333334'
+      and c.summary='Memória legada com ponteiro ausente'
+      and c.last_processed_message_id is null
+  ) then raise exception 'Stale anchor incorrectly propagated to checkpoint'; end if;
 end $$;
 
 insert into public.stories(id,user_id,character_id,title,is_legacy) values

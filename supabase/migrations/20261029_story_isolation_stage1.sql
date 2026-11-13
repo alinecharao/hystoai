@@ -309,9 +309,23 @@ insert into public.story_memory_checkpoints (
   story_id,user_id,character_id,summary,scene,known_facts,
   last_processed_message_id,revision,updated_at
 )
+-- Some legacy memory anchors refer to deleted messages or to a user
+-- turn rather than an assistant response. Keep the original legacy row
+-- (including its source ID) untouched; copy a checkpoint pointer only when
+-- the referenced assistant belongs to the SAME owner, character and story.
+-- A stale pointer becomes NULL in the new checkpoint instead of aborting
+-- the entire migration through the checkpoint's foreign key. The preserved
+-- summary remains readable, while the UI correctly treats its anchor as
+-- unverified until an authorized memory refresh replaces it.
 select m.story_id,m.user_id,m.character_id,m.summary,m.scene,m.known_facts,
-       m.last_processed_message_id,m.revision,m.updated_at
+       a.id,m.revision,m.updated_at
 from public.story_memories m
+left join public.messages a
+  on a.id = m.last_processed_message_id
+ and a.user_id = m.user_id
+ and a.character_id = m.character_id
+ and a.story_id = m.story_id
+ and a.role = 'assistant'
 on conflict (story_id) do nothing;
 
 alter table public.story_memory_checkpoints enable row level security;

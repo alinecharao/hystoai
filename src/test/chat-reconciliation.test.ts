@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasPersistedUserTurn, latestPendingUserTurn, toPersistedChatMessages } from "@/lib/chat-reconciliation";
+import { draftAfterFailedSubmission, hasPersistedUserTurn, latestPendingUserTurn, toPersistedChatMessages } from "@/lib/chat-reconciliation";
 
 describe("Authoritative chat recovery", () => {
   it("restores server message IDs rather than temporary regeneration IDs", () => {
@@ -66,5 +66,24 @@ describe("Unsaved draft safety", () => {
       { id: "other-id", role: "user", content: "Igual" },
       { id: "client-123", role: "assistant", content: "Igual" },
     ], "client-123")).toBe(false);
+  });
+});
+
+
+describe("Recovery of text after a streaming failure", () => {
+  const submitted = "Mensagem longa da persona com diálogos e ações próprias.";
+
+  it("restores original text when a provider fails before the server saves the turn", () => {
+    expect(draftAfterFailedSubmission([], "client-1", submitted, "")).toBe(submitted);
+  });
+
+  it("never reconstructs a draft for a turn already persisted, even if text repeats", () => {
+    const persisted = [{ id: "client-1", role: "user", content: submitted }];
+    expect(draftAfterFailedSubmission(persisted, "client-1", submitted, "")).toBe("");
+    expect(draftAfterFailedSubmission([{ id: "other-id", role: "user", content: submitted }], "client-1", submitted, "")).toBe(submitted);
+  });
+
+  it("never replaces a newer user draft with a failed earlier submission", () => {
+    expect(draftAfterFailedSubmission([], "client-1", submitted, "Nova mensagem")).toBe("Nova mensagem");
   });
 });

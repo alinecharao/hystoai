@@ -8,9 +8,10 @@ import { serializeUserMessageForModel } from "@/lib/narrative-input";
 import { buildStoryMemoryHistory, readStoryMemoryJson, selectSafeStoryMemory, type StoryMemorySnapshot } from "@/lib/story-memory";
 import { getGeminiModelCandidates, isGeminiModelUnavailableError } from "@/lib/ai/gemini-models";
 import { CURATED_NOTE_LIMIT, formatCuratedNotes, type CuratedNote } from "@/lib/curated-story-memory";
-import { buildCharacterKnowledgePolicy } from "@/lib/character-knowledge";
-import { buildSupportingCastPolicy } from "@/lib/supporting-cast";
+import { buildCharacterKnowledgePolicy, parseCharacterKnowledgeMode } from "@/lib/character-knowledge";
+import { buildSupportingCastPolicy, parseSupportingCastMode } from "@/lib/supporting-cast";
 import { buildThoughtPlacementPolicy } from "@/lib/thought-placement";
+import { buildCompactNarrativeSystem, selectGroqNarrativeMessages } from "@/lib/ai/narrative-context";
 
 // Remove only obvious consecutive loops; preserve ordinary literary repetition.
 function removeGenerationLoops(value: string): string {
@@ -232,6 +233,8 @@ export const Route = createFileRoute("/api/chat")({
       GET: async () => new Response(JSON.stringify({
         responseVersions: process.env["HYSTO_RESPONSE_VERSIONS"] === "true" &&
           process.env["HYSTO_ATOMIC_APPEND"] === "true",
+        recovery: process.env["HYSTO_ENABLE_CHAT_RECOVERY"] === "true" &&
+          process.env["HYSTO_ATOMIC_APPEND"] === "true",
       }), {
         headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
       }),
@@ -323,8 +326,8 @@ export const Route = createFileRoute("/api/chat")({
           retryMessageId?: string | null;
         };
         const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        const text = typeof body.text === "string" ? body.text.trim() : "";
-        if (!text) return json(400, "Mensagem vazia.");
+        const text = typeof body.text === "string" ? body.text : "";
+        if (!text.trim()) return json(400, "Mensagem vazia.");
         if (text.length > 50000) {
           return json(413, "Esta mensagem é muito longa. Divida o texto em partes menores antes de enviar.");
         }
@@ -386,7 +389,7 @@ export const Route = createFileRoute("/api/chat")({
             return json(409, "Apenas a última resposta salva pode gerar versões alternativas.");
           }
           const parent = history?.find((item) => item.id === latestMessage.reply_to_message_id);
-          if (!parent || parent.role !== "user" || parent.content.trim() !== text) {
+          if (!parent || parent.role !== "user" || parent.content !== text) {
             return json(409, "A mensagem original não corresponde ao histórico. Atualize a conversa.");
           }
           regenerationParentId = parent.id;
@@ -402,7 +405,7 @@ export const Route = createFileRoute("/api/chat")({
           // Only the last persisted user turn may be recovered. Any assistant
           // after it means the turn has already completed; never duplicate it.
           if (!latestMessage || latestMessage.id !== body.retryMessageId ||
-              latestMessage.role !== "user" || latestMessage.content.trim() !== text) {
+              latestMessage.role !== "user" || latestMessage.content !== text) {
             return json(409, "A mensagem não está pendente de resposta. Atualize o histórico.");
           }
         } else if (!regenerating && latestMessage?.role === "user") {
@@ -429,39 +432,6 @@ export const Route = createFileRoute("/api/chat")({
           }
         } catch (error) {
           console.warn("story_memory_read_failed", error);
-        }
-
-        if (!retrying && !regenerating) {
-          // The atomic RPC serializes competing sends for the same conversation.
-          // Keep the legacy insert path until the additive migration is deployed.
-          // Once the migration is confirmed, enable HYSTO_ATOMIC_APPEND=true.
-          if (process.env["HYSTO_ATOMIC_APPEND"] === "true") {
-            const { data: appended, error: appendError } = await supabase.rpc("append_chat_user_message", {
-              p_message_id: clientMessageId,
-              p_character_id: character.id,
-              p_content: text,
-            });
-            if (appendError) {
-              console.error("chat_atomic_append_failed", { code: appendError.code });
-              return json(503, "Não foi possível registrar a mensagem. Tente novamente.");
-            }
-            if (!appended) return json(409, "Já existe uma mensagem pendente ou este envio foi registrado. Atualize o histórico.");
-          } else {
-            const { error: insErr } = await supabase
-              .from("messages")
-              .insert({
-                id: clientMessageId,
-                client_message_id: clientMessageId,
-                character_id: character.id,
-                user_id: userId,
-                role: "user",
-                content: text,
-              });
-            if (insErr?.code === "23505") {
-              return json(409, "Este envio já foi registrado. Atualize o histórico.");
-            }
-            if (insErr) return json(500, insErr.message);
-          }
         }
 
         const COMMANDS: Record<string, string> = {
@@ -601,7 +571,7 @@ export const Route = createFileRoute("/api/chat")({
 
         const system = [
           `Você é ${character.name}. Interprete este personagem com total fidelidade — voz, jeito de falar, valores, limites e falhas.`,
-          selectedPersona ? `<USER_PERSONA>\\nPERSONAGEM CONTROLADO PELO USUÁRIO: ${selectedPersona.name}\\nGênero: ${selectedPersona.gender || "não informado"}\\nIdade: ${selectedPersona.age ?? "não informada"}\\nFunção, personalidade e relação: ${selectedPersona.role_description || selectedPersona.description}\\nGostos: ${selectedPersona.likes || "não informados"}\\nNão gosta: ${selectedPersona.dislikes || "não informado"}\\nLIMITES E RESTRIÇÕES DA PERSONA (RESPEITAR): ${selectedPersona.boundaries || "não informados"}\\n</USER_PERSONA>` : "SEM PERSONA: o usuário controla sua própria protagonista conforme a conversa; não invente nome, aparência, história ou identidade para ela.",
+          selectedPersona ? `<USER_PERSONA>\nPERSONAGEM CONTROLADO PELO USUÁRIO: ${selectedPersona.name}\nGênero: ${selectedPersona.gender || "não informado"}\nIdade: ${selectedPersona.age ?? "não informada"}\nFunção, personalidade e relação: ${selectedPersona.role_description || selectedPersona.description}\nGostos: ${selectedPersona.likes || "não informados"}\nNão gosta: ${selectedPersona.dislikes || "não informado"}\nLIMITES E RESTRIÇÕES DA PERSONA (RESPEITAR): ${selectedPersona.boundaries || "não informados"}\n</USER_PERSONA>` : "SEM PERSONA: o usuário controla sua própria protagonista conforme a conversa; não invente nome, aparência, história ou identidade para ela.",
           "A USER_PERSONA descreve SOMENTE a protagonista controlada pelo usuário, não o personagem que você interpreta. Nunca transfira atributos, nomes, vínculos ou conhecimentos entre eles. A persona não é autorização para narrar ações, pensamentos ou falas do usuário.",
           `<CHARACTER_CANON>\n${promptSections.canon || "Sem informações adicionais."}\n</CHARACTER_CANON>`,
           `<STORY_BACKGROUND>\n${stripTaggedSections(character.background?.trim() ?? "") || "Sem contexto adicional."}\n</STORY_BACKGROUND>`,
@@ -745,6 +715,75 @@ export const Route = createFileRoute("/api/chat")({
           );
         }
 
+        // Groq needs a smaller, chronology-safe prompt. All character canon,
+        // user persona, confirmed memory and the LATEST user message remain
+        // verbatim; only redundant generic guidance and older turns shrink.
+        const compactGroqSystem = buildCompactNarrativeSystem({
+          characterName: character.name,
+          persona: extractTaggedSection(system, "USER_PERSONA"),
+          canon: promptSections.canon,
+          background: stripTaggedSections(character.background?.trim() ?? ""),
+          currentStory: promptSections.currentStory,
+          styleExamples: promptSections.styleExamples,
+          curatedMemory: curatedMemoryPrompt,
+          memorySummary: storyMemory?.summary ?? "",
+          memoryScene: storyMemory?.scene ?? "",
+          memoryKnowledge: storyMemory?.known_facts ?? "",
+          knowledgeMode: parseCharacterKnowledgeMode(body.knowledgeMode),
+          castMode: parseSupportingCastMode(body.supportingCastMode),
+          thoughtsEnabled: body.thoughts === true,
+        });
+        const groqCanHandleTurn = selectGroqNarrativeMessages(
+          [{ role: "system", content: effectiveSystem }, ...messages],
+          compactGroqSystem,
+        ) !== null;
+        if (!groqCanHandleTurn && requestedProvider === "groq") {
+          return json(413, "Esta mensagem ultrapassa o contexto seguro estimado do Groq. Nenhum texto foi cortado ou salvo. Use Automático ou outro provedor com mais contexto.");
+        }
+        const eligibleOrderedProviders = orderedProviders.filter(
+          (provider) => provider.id !== "groq" || groqCanHandleTurn,
+        );
+        if (eligibleOrderedProviders.length === 0) {
+          return json(413, "A mensagem não cabe integralmente no contexto disponível neste provedor. Nenhuma parte foi cortada ou salva. Selecione outro provedor.");
+        }
+
+        // Preflight the provider selection before persisting a new user turn.
+        // A configuration/quota failure must not strand a message pending when
+        // generation never had a chance to begin. Server-side RPCs still
+        // protect the append against concurrent requests.
+        if (!retrying && !regenerating) {
+          // The atomic RPC serializes competing sends for the same conversation.
+          // Keep the legacy insert path until the additive migration is deployed.
+          // Once the migration is confirmed, enable HYSTO_ATOMIC_APPEND=true.
+          if (process.env["HYSTO_ATOMIC_APPEND"] === "true") {
+            const { data: appended, error: appendError } = await supabase.rpc("append_chat_user_message", {
+              p_message_id: clientMessageId,
+              p_character_id: character.id,
+              p_content: text,
+            });
+            if (appendError) {
+              console.error("chat_atomic_append_failed", { code: appendError.code });
+              return json(503, "Não foi possível registrar a mensagem. Tente novamente.");
+            }
+            if (!appended) return json(409, "Já existe uma mensagem pendente ou este envio foi registrado. Atualize o histórico.");
+          } else {
+            const { error: insErr } = await supabase
+              .from("messages")
+              .insert({
+                id: clientMessageId,
+                client_message_id: clientMessageId,
+                character_id: character.id,
+                user_id: userId,
+                role: "user",
+                content: text,
+              });
+            if (insErr?.code === "23505") {
+              return json(409, "Este envio já foi registrado. Atualize o histórico.");
+            }
+            if (insErr) return json(500, insErr.message);
+          }
+        }
+
         const routerFetch: typeof fetch = async (input, init) => {
           const originalBody =
             typeof init?.body === "string"
@@ -755,7 +794,7 @@ export const Route = createFileRoute("/api/chat")({
 
           let lastResponse: Response | null = null;
 
-          for (const provider of orderedProviders) {
+          for (const provider of eligibleOrderedProviders) {
             const headers = new Headers(init?.headers);
             headers.set("Authorization", `Bearer ${provider.apiKey}`);
             headers.set("Content-Type", "application/json");
@@ -779,22 +818,40 @@ export const Route = createFileRoute("/api/chat")({
                     Boolean(message) && typeof message === "object",
                 );
                 const systemMessages = promptMessages.filter(
-                  (message) => message["role"] === "system",
+                  (message) => message["role"] === "system" || message["role"] === "developer",
                 );
                 const conversationMessages = promptMessages.filter(
-                  (message) => message["role"] !== "system",
+                  (message) => message["role"] !== "system" && message["role"] !== "developer",
                 );
-
+                const isNarrativeGeneration = systemMessages.some(
+                  (message) => message["content"] === effectiveSystem,
+                );
+                const narrativeContext = isNarrativeGeneration
+                  ? selectGroqNarrativeMessages(
+                      promptMessages.map((message) => ({
+                        ...message,
+                        role: message["role"],
+                        content: message["content"],
+                      })),
+                      compactGroqSystem,
+                    )
+                  : null;
+                if (isNarrativeGeneration && !narrativeContext) {
+                  // Should be caught before append; never truncate a user
+                  // message after it has been persisted.
+                  return new Response(JSON.stringify({ error: "A mensagem completa ultrapassa o limite de contexto do Groq." }), {
+                    status: 413, headers: { "Content-Type": "application/json" },
+                  });
+                }
                 const groqMaxCompletionTokens = Math.min(
                   typeof originalBody["max_tokens"] === "number"
                     ? originalBody["max_tokens"]
                     : 1600,
                   1600,
                 );
-
                 requestBody = {
                   ...requestBody,
-                  messages: [
+                  messages: narrativeContext ?? [
                     ...systemMessages.slice(0, 1),
                     ...conversationMessages.slice(-4),
                   ],
@@ -803,7 +860,6 @@ export const Route = createFileRoute("/api/chat")({
                     ? "low"
                     : "none",
                 };
-
                 delete requestBody["max_tokens"];
               }
 
