@@ -14,6 +14,76 @@ export type Database = {
   }
   public: {
     Tables: {
+      assistant_regeneration_claims: {
+        Row: {
+          assistant_message_id: string
+          character_id: string
+          claim_token: string
+          claimed_at: string
+          user_id: string
+        }
+        Insert: {
+          assistant_message_id: string
+          character_id: string
+          claim_token?: string
+          claimed_at?: string
+          user_id: string
+        }
+        Update: {
+          assistant_message_id?: string
+          character_id?: string
+          claim_token?: string
+          claimed_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assistant_regeneration_claims_assistant_message_id_fkey"
+            columns: ["assistant_message_id"]
+            isOneToOne: true
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      assistant_response_versions: {
+        Row: {
+          assistant_message_id: string
+          character_id: string
+          content: string
+          created_at: string
+          id: string
+          is_selected: boolean
+          user_id: string
+        }
+        Insert: {
+          assistant_message_id: string
+          character_id: string
+          content: string
+          created_at?: string
+          id?: string
+          is_selected?: boolean
+          user_id: string
+        }
+        Update: {
+          assistant_message_id?: string
+          character_id?: string
+          content?: string
+          created_at?: string
+          id?: string
+          is_selected?: boolean
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assistant_response_versions_assistant_message_id_fkey"
+            columns: ["assistant_message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       characters: {
         Row: {
           avatar: string
@@ -68,85 +138,8 @@ export type Database = {
         }
         Relationships: []
       }
-      assistant_response_versions: {
-        Row: {
-          story_id: string
-          id: string
-          assistant_message_id: string
-          user_id: string
-          character_id: string
-          content: string
-          is_selected: boolean
-          created_at: string
-        }
-        Insert: {
-          story_id?: string
-          id?: string
-          assistant_message_id: string
-          user_id: string
-          character_id: string
-          content: string
-          is_selected?: boolean
-          created_at?: string
-        }
-        Update: {
-          story_id?: string
-          id?: string
-          assistant_message_id?: string
-          user_id?: string
-          character_id?: string
-          content?: string
-          is_selected?: boolean
-          created_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "assistant_response_versions_assistant_message_id_fkey"
-            columns: ["assistant_message_id"]
-            isOneToOne: false
-            referencedRelation: "messages"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      assistant_regeneration_claims: {
-        Row: {
-          story_id: string
-          assistant_message_id: string
-          user_id: string
-          character_id: string
-          claim_token: string
-          claimed_at: string
-        }
-        Insert: {
-          story_id?: string
-          assistant_message_id: string
-          user_id: string
-          character_id: string
-          claim_token?: string
-          claimed_at?: string
-        }
-        Update: {
-          story_id?: string
-          assistant_message_id?: string
-          user_id?: string
-          character_id?: string
-          claim_token?: string
-          claimed_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "assistant_regeneration_claims_assistant_message_id_fkey"
-            columns: ["assistant_message_id"]
-            isOneToOne: true
-            referencedRelation: "messages"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       chat_generation_claims: {
         Row: {
-          story_id: string
           character_id: string
           claim_token: string
           claimed_at: string
@@ -154,7 +147,6 @@ export type Database = {
           user_message_id: string
         }
         Insert: {
-          story_id?: string
           character_id: string
           claim_token?: string
           claimed_at?: string
@@ -162,7 +154,6 @@ export type Database = {
           user_message_id: string
         }
         Update: {
-          story_id?: string
           character_id?: string
           claim_token?: string
           claimed_at?: string
@@ -181,7 +172,6 @@ export type Database = {
       }
       messages: {
         Row: {
-          story_id: string
           character_id: string
           client_message_id: string | null
           content: string
@@ -192,7 +182,6 @@ export type Database = {
           user_id: string
         }
         Insert: {
-          story_id?: string
           character_id: string
           client_message_id?: string | null
           content: string
@@ -203,7 +192,6 @@ export type Database = {
           user_id?: string
         }
         Update: {
-          story_id?: string
           character_id?: string
           client_message_id?: string | null
           content?: string
@@ -281,75 +269,8 @@ export type Database = {
         }
         Relationships: []
       }
-      story_memory_notes: {
-        Row: {
-          story_id: string
-          id: string
-          user_id: string
-          character_id: string
-          anchor_message_id: string
-          source_message_id: string | null
-          category: "fact" | "timeline" | "knowledge" | "private"
-          body: string
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          story_id?: string
-          id?: string
-          user_id?: string
-          character_id: string
-          anchor_message_id: string
-          source_message_id?: string | null
-          category: "fact" | "timeline" | "knowledge" | "private"
-          body: string
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          story_id?: string
-          id?: string
-          user_id?: string
-          character_id?: string
-          anchor_message_id?: string
-          source_message_id?: string | null
-          category?: "fact" | "timeline" | "knowledge" | "private"
-          body?: string
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "story_memory_notes_character_id_fkey"
-            columns: ["character_id"]
-            isOneToOne: false
-            referencedRelation: "characters"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "story_memory_notes_source_message_id_fkey"
-            columns: ["source_message_id"]
-            isOneToOne: false
-            referencedRelation: "messages"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      stories: {
-        Row: { id: string; user_id: string; character_id: string; title: string; is_legacy: boolean; archived_at: string | null; created_at: string; updated_at: string }
-        Insert: { id?: string; user_id: string; character_id: string; title?: string; is_legacy?: boolean; archived_at?: string | null; created_at?: string; updated_at?: string }
-        Update: { id?: string; user_id?: string; character_id?: string; title?: string; is_legacy?: boolean; archived_at?: string | null; created_at?: string; updated_at?: string }
-        Relationships: [{ foreignKeyName: "stories_character_id_fkey"; columns: ["character_id"]; isOneToOne: false; referencedRelation: "characters"; referencedColumns: ["id"] }]
-      }
-      story_memory_checkpoints: {
-        Row: { story_id: string; user_id: string; character_id: string; summary: string; scene: string; known_facts: string; last_processed_message_id: string | null; revision: number; updated_at: string }
-        Insert: { story_id: string; user_id: string; character_id: string; summary?: string; scene?: string; known_facts?: string; last_processed_message_id?: string | null; revision?: number; updated_at?: string }
-        Update: { story_id?: string; user_id?: string; character_id?: string; summary?: string; scene?: string; known_facts?: string; last_processed_message_id?: string | null; revision?: number; updated_at?: string }
-        Relationships: []
-      }
       story_memories: {
         Row: {
-          story_id: string
           character_id: string
           known_facts: string
           last_processed_message_id: string | null
@@ -361,7 +282,6 @@ export type Database = {
           user_id: string
         }
         Insert: {
-          story_id?: string
           character_id: string
           known_facts?: string
           last_processed_message_id?: string | null
@@ -373,7 +293,6 @@ export type Database = {
           user_id: string
         }
         Update: {
-          story_id?: string
           character_id?: string
           known_facts?: string
           last_processed_message_id?: string | null
@@ -394,83 +313,96 @@ export type Database = {
           },
         ]
       }
+      story_memory_notes: {
+        Row: {
+          anchor_message_id: string
+          body: string
+          category: string
+          character_id: string
+          created_at: string
+          id: string
+          source_message_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          anchor_message_id: string
+          body: string
+          category: string
+          character_id: string
+          created_at?: string
+          id?: string
+          source_message_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Update: {
+          anchor_message_id?: string
+          body?: string
+          category?: string
+          character_id?: string
+          created_at?: string
+          id?: string
+          source_message_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "story_memory_notes_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "story_memory_notes_source_message_id_fkey"
+            columns: ["source_message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      reserve_visual_generation: {
-        Args: { p_request_id: string }
-        Returns: boolean
-      }
-      append_story_user_message: {
-        Args: { p_message_id: string; p_story_id: string; p_content: string }
-        Returns: boolean
-      }
-      claim_story_generation: {
-        Args: { p_user_message_id: string; p_story_id: string }
-        Returns: string | null
-      }
-      claim_story_regeneration: {
-        Args: { p_assistant_message_id: string; p_story_id: string }
-        Returns: string | null
-      }
-      finish_story_regeneration: {
-        Args: { p_assistant_message_id: string; p_claim_token: string; p_content: string }
-        Returns: string | null
-      }
-      select_story_response_version: {
-        Args: { p_story_id: string; p_assistant_message_id: string; p_version_id: string | null }
-        Returns: boolean
-      }
-      commit_story_memory_checkpoint: {
-        Args: { p_story_id: string; p_assistant_message_id: string; p_summary: string; p_scene: string; p_known_facts: string }
-        Returns: boolean
-      }
-      clear_story_messages: {
-        Args: { p_story_id: string }
-        Returns: boolean
-      }
-      delete_story_message: {
-        Args: { p_story_id: string; p_message_id: string }
-        Returns: boolean
-      }
-      commit_chat_story_memory: {
+      append_chat_user_message: {
         Args: {
           p_character_id: string
-          p_assistant_message_id: string
-          p_summary: string
-          p_scene: string
-          p_known_facts: string
+          p_content: string
+          p_message_id: string
         }
         Returns: boolean
       }
       claim_assistant_regeneration: {
         Args: { p_assistant_message_id: string; p_character_id: string }
-        Returns: string | null
-      }
-      release_assistant_regeneration: {
-        Args: { p_assistant_message_id: string; p_claim_token: string }
-        Returns: boolean
-      }
-      finish_assistant_regeneration: {
-        Args: { p_assistant_message_id: string; p_claim_token: string; p_content: string }
-        Returns: string | null
-      }
-      select_assistant_response_version: {
-        Args: { p_assistant_message_id: string; p_version_id: string | null }
-        Returns: boolean
-      }
-      append_chat_user_message: {
-        Args: { p_character_id: string; p_content: string; p_message_id: string }
-        Returns: boolean
+        Returns: string
       }
       claim_chat_generation: {
         Args: { p_character_id: string; p_user_message_id: string }
         Returns: string
       }
+      finish_assistant_regeneration: {
+        Args: {
+          p_assistant_message_id: string
+          p_claim_token: string
+          p_content: string
+        }
+        Returns: string
+      }
+      release_assistant_regeneration: {
+        Args: { p_assistant_message_id: string; p_claim_token: string }
+        Returns: boolean
+      }
       release_chat_generation: {
         Args: { p_claim_token: string; p_user_message_id: string }
+        Returns: boolean
+      }
+      select_assistant_response_version: {
+        Args: { p_assistant_message_id: string; p_version_id: string }
         Returns: boolean
       }
     }
