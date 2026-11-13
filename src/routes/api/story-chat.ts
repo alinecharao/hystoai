@@ -414,14 +414,6 @@ export const Route = createFileRoute("/api/story-chat")({
           console.warn("story_memory_read_failed", error);
         }
 
-        if (!retrying && !regenerating) {
-          const {data:appended,error:appendError}=await supabase.rpc("append_story_user_message",{
-            p_message_id:clientMessageId,p_story_id:storyId,p_content:text,
-          });
-          if(appendError)return json(503,"Não foi possível salvar a mensagem nesta história.");
-          if(!appended)return json(409,"Já há uma mensagem pendente nesta história.");
-        }
-
         const COMMANDS: Record<string, string> = {
           advance:
             "DIREÇÃO DE CENA: introduza um desenvolvimento lógico e interessante que se encaixe na cena atual, respeitando fatos estabelecidos, ritmo e personagens presentes. Não force mudanças sem preparação.",
@@ -702,6 +694,18 @@ export const Route = createFileRoute("/api/story-chat")({
             429,
             "Todos os modelos configurados estão temporariamente bloqueados por limite diário. Tente novamente mais tarde.",
           );
+        }
+
+        // Preflight the provider selection before persisting a new user turn.
+        // A configuration/quota failure must not strand a message pending when
+        // generation never had a chance to begin. Server-side RPCs still
+        // protect the append against concurrent requests.
+        if (!retrying && !regenerating) {
+          const {data:appended,error:appendError}=await supabase.rpc("append_story_user_message",{
+            p_message_id:clientMessageId,p_story_id:storyId,p_content:text,
+          });
+          if(appendError)return json(503,"Não foi possível salvar a mensagem nesta história.");
+          if(!appended)return json(409,"Já há uma mensagem pendente nesta história.");
         }
 
         const routerFetch: typeof fetch = async (input, init) => {
