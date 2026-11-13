@@ -18,7 +18,7 @@ describe("Version history for old and current assistant messages", () => {
 
   it("marks the original selected if no alternative is currently selected", () => {
     const rows = responseVersionEntries("Resposta original", versions.map((v) => ({ ...v, is_selected: false })));
-    expect(rows[0].selected).toBe(true);
+    expect(rows[0]?.selected).toBe(true);
     expect(rows.slice(1).every((row) => !row.selected)).toBe(true);
   });
 
