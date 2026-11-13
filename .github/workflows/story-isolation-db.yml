@@ -49,6 +49,9 @@ jobs:
         run: |
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261029_story_isolation_stage1.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261029_story_isolation_stage2_rpcs.sql
+          # Mandatory read-only check before any legacy write permissions
+          # are revoked. Simulates the production cutover decision boundary.
+          psql -X -v ON_ERROR_STOP=1 -f supabase/verification/20261113_story_cutover_readiness.sql
           psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261029_story_isolation_stage3_cutover.sql
           # The Lovable clone lacks an optional legacy memory RPC. Repeat
           # the cutover without it to test idempotent, safe migration.
