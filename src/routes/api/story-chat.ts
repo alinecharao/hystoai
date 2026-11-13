@@ -299,8 +299,8 @@ export const Route = createFileRoute("/api/story-chat")({
           retryMessageId?: string | null;
         };
         const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        const text = typeof body.text === "string" ? body.text.trim() : "";
-        if (!text) return json(400, "Mensagem vazia.");
+        const text = typeof body.text === "string" ? body.text : "";
+        if (!text.trim()) return json(400, "Mensagem vazia.");
         if (text.length > 50000) {
           return json(413, "Esta mensagem é muito longa. Divida o texto em partes menores antes de enviar.");
         }
