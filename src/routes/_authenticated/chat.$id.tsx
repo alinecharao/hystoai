@@ -376,6 +376,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
   const initial = useMemo<UIMessage[]>(() => toPersistedChatMessages(stored), [stored]);
   const regenerateIdRef = useRef<string | null>(null);
   const pendingClientMessageIdRef = useRef<string | null>(null);
+  const submittedTurnRef = useRef<{ id: string; text: string } | null>(null);
   const retryMessageIdRef = useRef<string | null>(null);
   const transport = useMemo(
     () => new DefaultChatTransport({
@@ -418,24 +419,35 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
       regenerateIdRef.current = null;
       retryMessageIdRef.current = null;
       pendingClientMessageIdRef.current = null;
+      submittedTurnRef.current = null;
       // Keep the lock until the persisted conversation is synchronized.
       void reconcileFinishedTurn(fromAlternative);
     },
     onError: () => {
       const fromAlternative = regenerateIdRef.current !== null;
+      const failedTurn = submittedTurnRef.current;
+      submittedTurnRef.current = null;
       regenerateIdRef.current = null;
       retryMessageIdRef.current = null;
       pendingClientMessageIdRef.current = null;
-      void reconcileFinishedTurn(fromAlternative);
+      // Stream errors don't always reject sendMessage. Restore unsaved text
+      // only after confirming the client UUID does not exist on the server.
+      void reconcileFinishedTurn(fromAlternative, failedTurn);
     },
   });
 
-  async function reconcileFinishedTurn(restorePersistedState: boolean) {
+  async function reconcileFinishedTurn(
+    restorePersistedState: boolean,
+    failedTurn: { id: string; text: string } | null = null,
+  ) {
     try {
       const [fresh] = await Promise.all([
         qc.fetchQuery(messagesQuery(character.id)),
         qc.invalidateQueries({ queryKey: ["response-versions", character.id] }),
       ]);
+      if (failedTurn && !hasPersistedUserTurn(fresh, failedTurn.id)) {
+        setInput((current) => current.trim() ? current : failedTurn.text);
+      }
       // Regeneration SDK replies have temporary IDs. Always use the real
       // database rows instead of reapplying a stale render-time initial array.
       if (restorePersistedState) setMessages(toPersistedChatMessages(fresh));
@@ -469,6 +481,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
     setErrorHidden(true);
     const clientMessageId = crypto.randomUUID();
     pendingClientMessageIdRef.current = clientMessageId;
+    submittedTurnRef.current = { id: clientMessageId, text };
     void sendMessage({ text }).catch(async (error) => {
       console.error("chat_send_failed", error);
       try {
@@ -484,6 +497,9 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
       } finally {
         if (pendingClientMessageIdRef.current === clientMessageId) {
           pendingClientMessageIdRef.current = null;
+        }
+        if (submittedTurnRef.current?.id === clientMessageId) {
+          submittedTurnRef.current = null;
         }
         sendingLock.current = false;
       }
