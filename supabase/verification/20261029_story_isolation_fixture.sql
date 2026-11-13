@@ -76,6 +76,18 @@ insert into auth.users(id) values
  ('22222222-2222-4222-8222-222222222222');
 insert into public.characters(id,user_id,name) values
  ('33333333-3333-4333-8333-333333333333',null,'Personagem público');
+-- A second legacy character has memory text whose checkpoint points to a
+-- nonexistent assistant. This mirrors historical deleted/invalid anchors:
+-- stage 1 must preserve the original row and not abort its FK backfill.
+insert into public.characters(id,user_id,name) values
+ ('33333333-3333-4333-8333-333333333334',
+  '11111111-1111-4111-8111-111111111111','Personagem privado de teste');
+insert into public.story_memories(user_id,character_id,summary,last_processed_message_id) values
+ ('11111111-1111-4111-8111-111111111111',
+  '33333333-3333-4333-8333-333333333334',
+  'Memória legada com ponteiro ausente',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+
 insert into public.messages(id,user_id,character_id,role,content) values
  ('44444444-4444-4444-8444-444444444441','11111111-1111-4111-8111-111111111111','33333333-3333-4333-8333-333333333333','user','Conteúdo fictício');
 insert into public.messages(id,user_id,character_id,role,content,reply_to_message_id) values
