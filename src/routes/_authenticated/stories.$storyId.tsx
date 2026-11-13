@@ -22,6 +22,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { supabase } from "@/integrations/supabase/client";
 import { activeChatTurnIds } from "@/lib/chat-validation";
 import { readDraft, saveDraft } from "@/lib/chat-drafts";
+import { responseVersionEntries } from "@/lib/response-version-history";
 import { readStoryExport, saveStoryExportFile } from "@/lib/story-export";
 import { draftAfterFailedSubmission, latestPendingUserTurn, toPersistedChatMessages } from "@/lib/chat-reconciliation";
 import type { MemoryMessageSelection } from "@/components/curated-memory-panel";
@@ -144,6 +145,36 @@ function ChatWindow({ character, story, stored }: { character: Character; story:
     },
   });
   const [versionViewerMessageId, setVersionViewerMessageId] = useState<string | null>(null);
+  // Always fetch the original and its alternatives by persisted message ID.
+  // Historical responses may be older than the 100-message chat window.
+  const { data: viewedVersions, isPending: viewedVersionsLoading, error: viewedVersionsError } = useQuery({
+    queryKey: ["response-version-detail", user.id, story.id, versionViewerMessageId],
+    enabled: responseVersionsEnabled && versionViewerMessageId !== null,
+    queryFn: async () => {
+      if (!versionViewerMessageId) throw new Error("Mensagem não selecionada.");
+      const { data: source, error: sourceError } = await supabase.from("messages")
+        .select("id, content, role")
+        .eq("id", versionViewerMessageId)
+        .eq("user_id", user.id)
+        .eq("character_id", character.id)
+        .eq("story_id", story.id)
+        .eq("role", "assistant")
+        .maybeSingle();
+      if (sourceError || !source) throw new Error("Não foi possível carregar a resposta original.");
+      const { data: alternatives, error: alternativesError } = await supabase.from("assistant_response_versions")
+        .select("id, content, is_selected")
+        .eq("user_id", user.id)
+        .eq("character_id", character.id)
+        .eq("story_id", story.id)
+        .eq("assistant_message_id", source.id)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true });
+      if (alternativesError) throw new Error("Não foi possível carregar as versões desta resposta.");
+      return responseVersionEntries(source.content, alternatives ?? []);
+    },
+    staleTime: 0,
+  });
+
   const [versionChanging, setVersionChanging] = useState(false);
   const [deletingMessages, setDeletingMessages] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -789,17 +820,14 @@ function ChatWindow({ character, story, stored }: { character: Character; story:
           <DialogDescription>Versões antigas estão disponíveis para consulta. A continuidade permanece vinculada à versão escolhida quando a conversa avançou.</DialogDescription>
           {versionViewerMessageId && (
             <div className="space-y-3">
-              {(() => {
-                const base = stored.find((item) => item.id === versionViewerMessageId);
-                const alternatives = responseVersions.filter((item) => item.assistant_message_id === versionViewerMessageId);
-                return [{ id: "original", content: base?.content ?? "", is_selected: !alternatives.some((item) => item.is_selected) },
-                  ...alternatives].map((item, index) => (
-                    <div key={item.id} className="rounded-xl border border-border p-3">
-                      <p className="mb-2 text-xs font-medium text-muted-foreground">Versão {index + 1}{item.is_selected ? " · Escolhida" : ""}</p>
-                      <div className="whitespace-pre-wrap break-words text-sm">{item.content}</div>
-                    </div>
-                  ));
-              })()}
+              {viewedVersionsLoading && <p className="text-sm text-muted-foreground">Carregando versões...</p>}
+              {viewedVersionsError && <p role="alert" className="text-sm text-destructive">{viewedVersionsError.message}</p>}
+              {viewedVersions?.map((item, index) => (
+                <div key={item.id} className="rounded-xl border border-border p-3">
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">Versão {index + 1}{item.selected ? " · Escolhida" : ""}</p>
+                  <div className="whitespace-pre-wrap break-words text-sm">{item.content}</div>
+                </div>
+              ))}
             </div>
           )}
         </DialogContent>
@@ -816,6 +844,12 @@ function ChatWindow({ character, story, stored }: { character: Character; story:
               <div key={message.id} className="rounded-xl border border-border/60 p-3">
                 <p className="mb-2 text-xs font-semibold text-muted-foreground">{message.role === "user" ? "Você" : character.name}</p>
                 <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">{message.content}</div>
+                {responseVersionsEnabled && message.role === "assistant" && (
+                  <Button type="button" variant="outline" size="sm" className="mt-3"
+                    onClick={() => { setHistoryDialog(false); setVersionViewerMessageId(message.id); }}>
+                    Consultar versões desta resposta
+                  </Button>
+                )}
               </div>
             ))}
           </div>
