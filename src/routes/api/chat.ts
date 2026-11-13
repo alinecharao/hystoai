@@ -431,39 +431,6 @@ export const Route = createFileRoute("/api/chat")({
           console.warn("story_memory_read_failed", error);
         }
 
-        if (!retrying && !regenerating) {
-          // The atomic RPC serializes competing sends for the same conversation.
-          // Keep the legacy insert path until the additive migration is deployed.
-          // Once the migration is confirmed, enable HYSTO_ATOMIC_APPEND=true.
-          if (process.env["HYSTO_ATOMIC_APPEND"] === "true") {
-            const { data: appended, error: appendError } = await supabase.rpc("append_chat_user_message", {
-              p_message_id: clientMessageId,
-              p_character_id: character.id,
-              p_content: text,
-            });
-            if (appendError) {
-              console.error("chat_atomic_append_failed", { code: appendError.code });
-              return json(503, "Não foi possível registrar a mensagem. Tente novamente.");
-            }
-            if (!appended) return json(409, "Já existe uma mensagem pendente ou este envio foi registrado. Atualize o histórico.");
-          } else {
-            const { error: insErr } = await supabase
-              .from("messages")
-              .insert({
-                id: clientMessageId,
-                client_message_id: clientMessageId,
-                character_id: character.id,
-                user_id: userId,
-                role: "user",
-                content: text,
-              });
-            if (insErr?.code === "23505") {
-              return json(409, "Este envio já foi registrado. Atualize o histórico.");
-            }
-            if (insErr) return json(500, insErr.message);
-          }
-        }
-
         const COMMANDS: Record<string, string> = {
           advance:
             "DIREÇÃO DE CENA: introduza um desenvolvimento lógico e interessante que se encaixe na cena atual, respeitando fatos estabelecidos, ritmo e personagens presentes. Não force mudanças sem preparação.",
@@ -743,6 +710,43 @@ export const Route = createFileRoute("/api/chat")({
             429,
             "Todos os modelos configurados estão temporariamente bloqueados por limite diário. Tente novamente mais tarde.",
           );
+        }
+
+        // Preflight the provider selection before persisting a new user turn.
+        // A configuration/quota failure must not strand a message pending when
+        // generation never had a chance to begin. Server-side RPCs still
+        // protect the append against concurrent requests.
+        if (!retrying && !regenerating) {
+          // The atomic RPC serializes competing sends for the same conversation.
+          // Keep the legacy insert path until the additive migration is deployed.
+          // Once the migration is confirmed, enable HYSTO_ATOMIC_APPEND=true.
+          if (process.env["HYSTO_ATOMIC_APPEND"] === "true") {
+            const { data: appended, error: appendError } = await supabase.rpc("append_chat_user_message", {
+              p_message_id: clientMessageId,
+              p_character_id: character.id,
+              p_content: text,
+            });
+            if (appendError) {
+              console.error("chat_atomic_append_failed", { code: appendError.code });
+              return json(503, "Não foi possível registrar a mensagem. Tente novamente.");
+            }
+            if (!appended) return json(409, "Já existe uma mensagem pendente ou este envio foi registrado. Atualize o histórico.");
+          } else {
+            const { error: insErr } = await supabase
+              .from("messages")
+              .insert({
+                id: clientMessageId,
+                client_message_id: clientMessageId,
+                character_id: character.id,
+                user_id: userId,
+                role: "user",
+                content: text,
+              });
+            if (insErr?.code === "23505") {
+              return json(409, "Este envio já foi registrado. Atualize o histórico.");
+            }
+            if (insErr) return json(500, insErr.message);
+          }
         }
 
         const routerFetch: typeof fetch = async (input, init) => {
