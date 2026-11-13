@@ -541,12 +541,15 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
    */
   const stopAndReconcile = () => {
     if (!sendingLock.current && !busy) return;
+    const interruptedTurn = submittedTurnRef.current;
     stop();
     regenerateIdRef.current = null;
     retryMessageIdRef.current = null;
     pendingClientMessageIdRef.current = null;
     submittedTurnRef.current = null;
-    void reconcileFinishedTurn(true);
+    // A cancellation is also a failed send if the server never saved it.
+    // Rehydrate from the authoritative server state before restoring text.
+    void reconcileFinishedTurn(true, interruptedTurn);
   };
 
   const readableChatError = useMemo(() => {
