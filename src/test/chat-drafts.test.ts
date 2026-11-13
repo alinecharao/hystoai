@@ -33,9 +33,17 @@ describe("Per-account and per-character unsent drafts", () => {
     expect(() => saveDraft(store, "u", "c", "teste")).not.toThrow();
   });
 
-  it("does not persist oversized drafts silently", () => {
+  it("keeps lengthy narrative drafts, even past the API submission limit", () => {
     const store = memoryStorage();
-    saveDraft(store, "u", "c", "A".repeat(30001));
+    const scene = "A".repeat(50_500) + "\\n\\nUma nova cena.";
+    saveDraft(store, "u", "c", scene);
+    expect(readDraft(store, "u", "c")).toBe(scene);
+  });
+
+  it("never restores an older stale draft after an oversized replacement", () => {
+    const store = memoryStorage();
+    saveDraft(store, "u", "c", "Versão antiga");
+    saveDraft(store, "u", "c", "A".repeat(100_001));
     expect(readDraft(store, "u", "c")).toBe("");
   });
 
