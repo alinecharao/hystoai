@@ -216,6 +216,8 @@ function ChatWindow({ character, story, stored }: { character: Character; story:
   const [historyHasMore, setHistoryHasMore] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const historyRequestIdRef = useRef(0);
+  const historyScrollRef = useRef<HTMLDivElement | null>(null);
   const [aiProvider, setAiProvider] = useState<AiProvider>("auto");
   const [knowledgeMode, setKnowledgeMode] = useState<CharacterKnowledgeMode>(DEFAULT_CHARACTER_KNOWLEDGE_MODE);
   const [supportingCastMode, setSupportingCastMode] = useState<SupportingCastMode>(DEFAULT_SUPPORTING_CAST_MODE);
@@ -374,6 +376,7 @@ function ChatWindow({ character, story, stored }: { character: Character; story:
   };
 
   const loadHistoryPage = async (page: number) => {
+    const requestId = ++historyRequestIdRef.current;
     setHistoryLoading(true);
     setHistoryError(null);
     try {
@@ -401,13 +404,17 @@ function ChatWindow({ character, story, stored }: { character: Character; story:
           pageRows = pageRows.map((item) => ({ ...item, content: selectedById.get(item.id) ?? item.content }));
         }
       }
+      if (requestId !== historyRequestIdRef.current) return;
       setHistoryRows(pageRows);
       setHistoryHasMore((data ?? []).length > 30);
       setHistoryPage(page);
+      if (historyScrollRef.current) historyScrollRef.current.scrollTop = 0;
     } catch (error) {
-      setHistoryError(error instanceof Error ? error.message : "Não foi possível carregar o histórico.");
+      if (requestId === historyRequestIdRef.current) {
+        setHistoryError(error instanceof Error ? error.message : "Não foi possível carregar o histórico.");
+      }
     } finally {
-      setHistoryLoading(false);
+      if (requestId === historyRequestIdRef.current) setHistoryLoading(false);
     }
   };
 
@@ -835,11 +842,14 @@ function ChatWindow({ character, story, stored }: { character: Character; story:
           )}
         </DialogContent>
       </Dialog>
-      <Dialog open={historyDialog} onOpenChange={setHistoryDialog}>
-        <DialogContent className="flex max-h-[85dvh] w-[calc(100%-2rem)] max-w-2xl flex-col overflow-hidden">
+      <Dialog open={historyDialog} onOpenChange={(open) => {
+        setHistoryDialog(open);
+        if (!open) historyRequestIdRef.current += 1;
+      }}>
+        <DialogContent className="flex h-[85dvh] max-h-[760px] w-[calc(100%-2rem)] max-w-2xl flex-col overflow-hidden">
           <DialogTitle>Histórico desde o início</DialogTitle>
           <DialogDescription>Consulte as mensagens antigas sem alterar a conversa atual. Exibindo até 30 por página, em ordem cronológica.</DialogDescription>
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto py-2">
+          <div ref={historyScrollRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain py-2">
             {historyLoading && <p className="text-sm text-muted-foreground">Carregando mensagens...</p>}
             {historyError && <p className="text-sm text-destructive">{historyError}</p>}
             {!historyLoading && !historyError && historyRows.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma mensagem nesta página.</p>}
@@ -916,6 +926,15 @@ function ChatWindow({ character, story, stored }: { character: Character; story:
         <Conversation className="relative z-10 min-h-0">
           <ConversationContent className="mx-auto w-full max-w-3xl gap-5 px-4 pb-8 pt-6 sm:px-5 sm:py-8">
             {character.opening_scene && <Bubble role="assistant" text={character.opening_scene} character={character} showThoughts={showThoughts} />}
+            {visibleMessageStart === 0 && stored.length >= 100 && (
+              <div className="pb-2 text-center">
+                <p className="mb-2 text-xs text-muted-foreground">A conversa possui mensagens anteriores às exibidas aqui.</p>
+                <Button type="button" variant="outline" size="sm"
+                  onClick={() => { setHistoryDialog(true); void loadHistoryPage(0); }}>
+                  Consultar histórico completo
+                </Button>
+              </div>
+            )}
             {visibleMessageStart > 0 && (
               <div className="py-2 text-center">
                 <Button type="button" variant="outline" size="sm" onClick={() => setVisibleCount((count) => count + 15)}>
@@ -1152,7 +1171,7 @@ function ChatWindow({ character, story, stored }: { character: Character; story:
               }}
             >
               <PromptInputTextarea
-                autoFocus
+                autoFocus={false} // Avoid mobile Safari opening the keyboard during navigation.
                 rows={1}
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
