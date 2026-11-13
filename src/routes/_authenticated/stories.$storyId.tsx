@@ -116,16 +116,18 @@ function ChatWindow({ character, story, stored }: { character: Character; story:
   const { user } = Route.useRouteContext();
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const { data: responseVersionsEnabled = false } = useQuery({
+  const { data: chatFeatureFlags } = useQuery({
     queryKey: ["chat-feature-story-response-versions"],
     queryFn: async () => {
       const response = await fetch("/api/story-chat", { method: "GET", cache: "no-store" });
-      if (!response.ok) return false;
-      const result = await response.json() as { responseVersions?: boolean };
-      return result.responseVersions === true;
+      if (!response.ok) return { responseVersions: false, recovery: false };
+      const result = await response.json() as { responseVersions?: boolean; recovery?: boolean };
+      return { responseVersions: result.responseVersions === true, recovery: result.recovery === true };
     },
     staleTime: 30_000,
   });
+  const responseVersionsEnabled = chatFeatureFlags?.responseVersions ?? false;
+  const recoveryEnabled = chatFeatureFlags?.recovery ?? false;
   const { data: responseVersions = [] } = useQuery({
     queryKey: ["story-response-versions",story.id],
     enabled: responseVersionsEnabled,
@@ -965,6 +967,7 @@ function ChatWindow({ character, story, stored }: { character: Character; story:
                   ? "Aguarde a sincronização da última resposta."
                   : "Esta resposta não tem um vínculo de geração confirmado. Gere uma nova resposta em uma conversa de teste.";
               const canGenerateFromUser =
+                recoveryEnabled &&
                 message.role === "user" &&
                 isLatestMessage &&
                 !error &&
@@ -1095,7 +1098,7 @@ function ChatWindow({ character, story, stored }: { character: Character; story:
               <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
                 <p>{readableChatError}</p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {stored[stored.length - 1]?.role === "user" ? (
+                  {stored[stored.length - 1]?.role === "user" && recoveryEnabled ? (
                     <Button
                       type="button"
                       variant="outline"
@@ -1107,6 +1110,8 @@ function ChatWindow({ character, story, stored }: { character: Character; story:
                       <RotateCcw className="size-3.5" />
                       Recuperar resposta
                     </Button>
+                  ) : stored[stored.length - 1]?.role === "user" ? (
+                    <p className="text-xs text-muted-foreground">A mensagem foi preservada, mas a recuperação automática ainda não está habilitada neste ambiente. Não envie novamente sem verificar o histórico.</p>
                   ) : (
                     <p className="text-xs text-muted-foreground">
                       Não há mensagem pendente para recuperar.
