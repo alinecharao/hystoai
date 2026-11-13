@@ -16,9 +16,14 @@ import { Route as AuthenticatedDashboardRouteImport } from './routes/_authentica
 import { Route as AuthenticatedPersonasRouteImport } from './routes/_authenticated/personas'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
+import { Route as ApiStoryChatRouteImport } from './routes/api/story-chat'
+import { Route as ApiStoryMemoryRouteImport } from './routes/api/story-memory'
+import { Route as ApiVisualCaptureRouteImport } from './routes/api/visual-capture'
 import { Route as AuthenticatedCharactersIndexRouteImport } from './routes/_authenticated/characters.index'
 import { Route as AuthenticatedCharactersNewRouteImport } from './routes/_authenticated/characters.new'
 import { Route as AuthenticatedChatIdRouteImport } from './routes/_authenticated/chat.$id'
+import { Route as AuthenticatedLibraryCharacterIdRouteImport } from './routes/_authenticated/library.$characterId'
+import { Route as AuthenticatedStoriesStoryIdRouteImport } from './routes/_authenticated/stories.$storyId'
 import { Route as AuthenticatedCharactersIdEditRouteImport } from './routes/_authenticated/characters.$id.edit'
 
 const IndexRoute = IndexRouteImport.update({
@@ -55,6 +60,21 @@ const ApiChatRoute = ApiChatRouteImport.update({
   path: '/api/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiStoryChatRoute = ApiStoryChatRouteImport.update({
+  id: '/api/story-chat',
+  path: '/api/story-chat',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiStoryMemoryRoute = ApiStoryMemoryRouteImport.update({
+  id: '/api/story-memory',
+  path: '/api/story-memory',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiVisualCaptureRoute = ApiVisualCaptureRouteImport.update({
+  id: '/api/visual-capture',
+  path: '/api/visual-capture',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedCharactersIndexRoute =
   AuthenticatedCharactersIndexRouteImport.update({
     id: '/characters/',
@@ -72,6 +92,18 @@ const AuthenticatedChatIdRoute = AuthenticatedChatIdRouteImport.update({
   path: '/chat/$id',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedLibraryCharacterIdRoute =
+  AuthenticatedLibraryCharacterIdRouteImport.update({
+    id: '/library/$characterId',
+    path: '/library/$characterId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedStoriesStoryIdRoute =
+  AuthenticatedStoriesStoryIdRouteImport.update({
+    id: '/stories/$storyId',
+    path: '/stories/$storyId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedCharactersIdEditRoute =
   AuthenticatedCharactersIdEditRouteImport.update({
     id: '/characters/$id/edit',
@@ -86,8 +118,13 @@ export interface FileRoutesByFullPath {
   '/personas': typeof AuthenticatedPersonasRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/story-chat': typeof ApiStoryChatRoute
+  '/api/story-memory': typeof ApiStoryMemoryRoute
+  '/api/visual-capture': typeof ApiVisualCaptureRoute
   '/characters/new': typeof AuthenticatedCharactersNewRoute
   '/chat/$id': typeof AuthenticatedChatIdRoute
+  '/library/$characterId': typeof AuthenticatedLibraryCharacterIdRoute
+  '/stories/$storyId': typeof AuthenticatedStoriesStoryIdRoute
   '/characters/': typeof AuthenticatedCharactersIndexRoute
   '/characters/$id/edit': typeof AuthenticatedCharactersIdEditRoute
 }
@@ -98,8 +135,13 @@ export interface FileRoutesByTo {
   '/personas': typeof AuthenticatedPersonasRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/story-chat': typeof ApiStoryChatRoute
+  '/api/story-memory': typeof ApiStoryMemoryRoute
+  '/api/visual-capture': typeof ApiVisualCaptureRoute
   '/characters/new': typeof AuthenticatedCharactersNewRoute
   '/chat/$id': typeof AuthenticatedChatIdRoute
+  '/library/$characterId': typeof AuthenticatedLibraryCharacterIdRoute
+  '/stories/$storyId': typeof AuthenticatedStoriesStoryIdRoute
   '/characters': typeof AuthenticatedCharactersIndexRoute
   '/characters/$id/edit': typeof AuthenticatedCharactersIdEditRoute
 }
@@ -112,8 +154,13 @@ export interface FileRoutesById {
   '/_authenticated/personas': typeof AuthenticatedPersonasRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/story-chat': typeof ApiStoryChatRoute
+  '/api/story-memory': typeof ApiStoryMemoryRoute
+  '/api/visual-capture': typeof ApiVisualCaptureRoute
   '/_authenticated/characters/new': typeof AuthenticatedCharactersNewRoute
   '/_authenticated/chat/$id': typeof AuthenticatedChatIdRoute
+  '/_authenticated/library/$characterId': typeof AuthenticatedLibraryCharacterIdRoute
+  '/_authenticated/stories/$storyId': typeof AuthenticatedStoriesStoryIdRoute
   '/_authenticated/characters/': typeof AuthenticatedCharactersIndexRoute
   '/_authenticated/characters/$id/edit': typeof AuthenticatedCharactersIdEditRoute
 }
@@ -126,8 +173,13 @@ export interface FileRouteTypes {
     | '/personas'
     | '/profile'
     | '/api/chat'
+    | '/api/story-chat'
+    | '/api/story-memory'
+    | '/api/visual-capture'
     | '/characters/new'
     | '/chat/$id'
+    | '/library/$characterId'
+    | '/stories/$storyId'
     | '/characters/'
     | '/characters/$id/edit'
   fileRoutesByTo: FileRoutesByTo
@@ -138,8 +190,13 @@ export interface FileRouteTypes {
     | '/personas'
     | '/profile'
     | '/api/chat'
+    | '/api/story-chat'
+    | '/api/story-memory'
+    | '/api/visual-capture'
     | '/characters/new'
     | '/chat/$id'
+    | '/library/$characterId'
+    | '/stories/$storyId'
     | '/characters'
     | '/characters/$id/edit'
   id:
@@ -151,8 +208,13 @@ export interface FileRouteTypes {
     | '/_authenticated/personas'
     | '/_authenticated/profile'
     | '/api/chat'
+    | '/api/story-chat'
+    | '/api/story-memory'
+    | '/api/visual-capture'
     | '/_authenticated/characters/new'
     | '/_authenticated/chat/$id'
+    | '/_authenticated/library/$characterId'
+    | '/_authenticated/stories/$storyId'
     | '/_authenticated/characters/'
     | '/_authenticated/characters/$id/edit'
   fileRoutesById: FileRoutesById
@@ -162,6 +224,9 @@ export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
   ApiChatRoute: typeof ApiChatRoute
+  ApiStoryChatRoute: typeof ApiStoryChatRoute
+  ApiStoryMemoryRoute: typeof ApiStoryMemoryRoute
+  ApiVisualCaptureRoute: typeof ApiVisualCaptureRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -215,6 +280,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiChatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/story-chat': {
+      id: '/api/story-chat'
+      path: '/api/story-chat'
+      fullPath: '/api/story-chat'
+      preLoaderRoute: typeof ApiStoryChatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/story-memory': {
+      id: '/api/story-memory'
+      path: '/api/story-memory'
+      fullPath: '/api/story-memory'
+      preLoaderRoute: typeof ApiStoryMemoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/visual-capture': {
+      id: '/api/visual-capture'
+      path: '/api/visual-capture'
+      fullPath: '/api/visual-capture'
+      preLoaderRoute: typeof ApiVisualCaptureRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/characters/': {
       id: '/_authenticated/characters/'
       path: '/characters'
@@ -236,6 +322,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedChatIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/library/$characterId': {
+      id: '/_authenticated/library/$characterId'
+      path: '/library/$characterId'
+      fullPath: '/library/$characterId'
+      preLoaderRoute: typeof AuthenticatedLibraryCharacterIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/stories/$storyId': {
+      id: '/_authenticated/stories/$storyId'
+      path: '/stories/$storyId'
+      fullPath: '/stories/$storyId'
+      preLoaderRoute: typeof AuthenticatedStoriesStoryIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/characters/$id/edit': {
       id: '/_authenticated/characters/$id/edit'
       path: '/characters/$id/edit'
@@ -252,6 +352,8 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
   AuthenticatedCharactersNewRoute: typeof AuthenticatedCharactersNewRoute
   AuthenticatedChatIdRoute: typeof AuthenticatedChatIdRoute
+  AuthenticatedLibraryCharacterIdRoute: typeof AuthenticatedLibraryCharacterIdRoute
+  AuthenticatedStoriesStoryIdRoute: typeof AuthenticatedStoriesStoryIdRoute
   AuthenticatedCharactersIndexRoute: typeof AuthenticatedCharactersIndexRoute
   AuthenticatedCharactersIdEditRoute: typeof AuthenticatedCharactersIdEditRoute
 }
@@ -262,6 +364,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
   AuthenticatedCharactersNewRoute: AuthenticatedCharactersNewRoute,
   AuthenticatedChatIdRoute: AuthenticatedChatIdRoute,
+  AuthenticatedLibraryCharacterIdRoute: AuthenticatedLibraryCharacterIdRoute,
+  AuthenticatedStoriesStoryIdRoute: AuthenticatedStoriesStoryIdRoute,
   AuthenticatedCharactersIndexRoute: AuthenticatedCharactersIndexRoute,
   AuthenticatedCharactersIdEditRoute: AuthenticatedCharactersIdEditRoute,
 }
@@ -274,6 +378,9 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
   ApiChatRoute: ApiChatRoute,
+  ApiStoryChatRoute: ApiStoryChatRoute,
+  ApiStoryMemoryRoute: ApiStoryMemoryRoute,
+  ApiVisualCaptureRoute: ApiVisualCaptureRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
