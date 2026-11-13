@@ -54,6 +54,19 @@ describe("Lossless Groq narrative context", () => {
     expect(selectGroqNarrativeMessages([{ role: "assistant", content: "fim" }], system)).toBeNull();
   });
 
+  it("replaces an SDK developer instruction without treating it as story history", () => {
+    const latest = { role: "user", content: "Última fala" };
+    const data = [
+      { role: "developer", content: "OLD HUGE SERVER PROMPT" },
+      { role: "assistant", content: "An earlier reply" },
+      latest,
+    ];
+    const selected = selectGroqNarrativeMessages(data, system, 2000);
+    expect(selected?.[0]).toEqual({ role: "system", content: system });
+    expect(selected?.filter((m) => m.role === "developer")).toHaveLength(0);
+    expect(selected?.at(-1)).toBe(latest);
+  });
+
   it("rejects an empty system or malformed budget", () => {
     expect(selectGroqNarrativeMessages([{ role: "user", content: "ola" }], "", 20)).toBeNull();
     expect(selectGroqNarrativeMessages([{ role: "user", content: "ola" }], system, Number.NaN)).toBeNull();
