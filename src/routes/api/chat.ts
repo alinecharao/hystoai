@@ -233,6 +233,8 @@ export const Route = createFileRoute("/api/chat")({
       GET: async () => new Response(JSON.stringify({
         responseVersions: process.env["HYSTO_RESPONSE_VERSIONS"] === "true" &&
           process.env["HYSTO_ATOMIC_APPEND"] === "true",
+        recovery: process.env["HYSTO_ENABLE_CHAT_RECOVERY"] === "true" &&
+          process.env["HYSTO_ATOMIC_APPEND"] === "true",
       }), {
         headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
       }),
