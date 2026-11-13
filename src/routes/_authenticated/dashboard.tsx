@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { charactersQuery, type Character } from "@/lib/characters";
 import { supabase } from "@/integrations/supabase/client";
 
+const MULTI_STORIES_ENABLED = import.meta.env["VITE_HYSTO_MULTI_STORIES"] === "true";
+
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({
     meta: [
@@ -167,6 +169,9 @@ function CharacterCard({ character, editable }: { character: Character; editable
   const qc = useQueryClient();
   const [deleting, setDeleting] = useState(false);
   const deleteChat = async () => {
+    // Character-wide deletion is only defined for the legacy chat.
+    // In multi-story mode, manage each conversation from its own library page.
+    if (MULTI_STORIES_ENABLED) return;
     if (deleting || !window.confirm(`Excluir permanentemente todas as mensagens da conversa com ${character.name}? O personagem será mantido.`)) return;
     setDeleting(true);
     try {
@@ -192,7 +197,7 @@ function CharacterCard({ character, editable }: { character: Character; editable
       <CharacterImage character={character} className="absolute inset-0 size-full transition duration-500 group-hover:scale-105" />
       <div className="absolute inset-0 bg-gradient-to-t from-background via-background/15 to-transparent" />
       <Link to="/chat/$id" params={{ id: character.id }} className="absolute inset-0" aria-label={`Abrir ${character.name}`} />
-      <button type="button" disabled={deleting} onClick={() => void deleteChat()} aria-label={`Excluir conversa com ${character.name}`} title="Excluir conversa (manter personagem)" className="absolute right-2 top-2 z-10 flex size-9 items-center justify-center rounded-full border border-white/20 bg-black/65 text-white backdrop-blur-sm transition hover:bg-destructive disabled:opacity-50"><Trash2 className="size-4" /></button>
+      {!MULTI_STORIES_ENABLED && <button type="button" disabled={deleting} onClick={() => void deleteChat()} aria-label={`Excluir conversa com ${character.name}`} title="Excluir conversa (manter personagem)" className="absolute right-2 top-2 z-10 flex size-9 items-center justify-center rounded-full border border-white/20 bg-black/65 text-white backdrop-blur-sm transition hover:bg-destructive disabled:opacity-50"><Trash2 className="size-4" /></button>}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 p-3 sm:p-4">
         <div className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase text-primary">
           <Sparkles className="size-3" /> {character.tags[0] || character.gender || "História"}
