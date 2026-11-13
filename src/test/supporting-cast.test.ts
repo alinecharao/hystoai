@@ -31,7 +31,7 @@ describe("supporting cast dialogue controls", () => {
     expect(prompt).toContain("aspas para falas");
     expect(prompt).toContain("Não leem pensamentos");
     expect(prompt).toContain("NÃO gere blocos de pensamento");
-    expect(prompt).toContain("não os deixe mudos");
+    expect(prompt).toContain("nem os deixe mudos");
     expect(prompt).toContain("MODO EQUILIBRADO");
     expect(buildSupportingCastPolicy("discreet")).toContain("MODO DISCRETO");
   });
@@ -43,7 +43,7 @@ describe("supporting cast dialogue controls", () => {
     expect(castPolicy).toContain("PERSONAGEM PRINCIPAL AUSENTE");
     expect(castPolicy).toContain("não gere pensamentos dele");
     expect(castPolicy).toContain("nem corte para seu ponto de vista");
-    expect(castPolicy).toContain("secundários realmente presentes");
+    expect(castPolicy).toContain("secundários que de fato podem presenciar e responder");
   });
 
   it("isolates setting across users and independent stories", () => {
