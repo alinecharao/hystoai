@@ -23,6 +23,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { activeChatTurnIds } from "@/lib/chat-validation";
 import { readDraft, saveDraft } from "@/lib/chat-drafts";
 import { responseVersionEntries } from "@/lib/response-version-history";
+import { historyPageRange, historyPageRows } from "@/lib/history-pagination";
 import { readStoryExport, saveStoryExportFile } from "@/lib/story-export";
 import { draftAfterFailedSubmission, latestPendingUserTurn, toPersistedChatMessages } from "@/lib/chat-reconciliation";
 import type { MemoryMessageSelection } from "@/components/curated-memory-panel";
@@ -371,16 +372,17 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
     setHistoryLoading(true);
     setHistoryError(null);
     try {
-      const start = page * 30;
+      const bounds = historyPageRange(page);
       const { data, error } = await supabase.from("messages")
         .select("id, role, content")
         .eq("character_id", character.id)
         .eq("user_id", user.id)
         .order("created_at", { ascending: true })
         .order("id", { ascending: true })
-        .range(start, start + 30);
+        .range(bounds.from, bounds.to);
       if (error) throw error;
-      let pageRows = (data ?? []).slice(0, 30);
+      const pageResult = historyPageRows(data ?? []);
+      let pageRows = pageResult.rows;
       if (responseVersionsEnabled) {
         const assistantIds = pageRows.filter((item) => item.role === "assistant").map((item) => item.id);
         if (assistantIds.length > 0) {
@@ -397,7 +399,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
       }
       if (requestId !== historyRequestIdRef.current) return;
       setHistoryRows(pageRows);
-      setHistoryHasMore((data ?? []).length > 30);
+      setHistoryHasMore(pageResult.hasMore);
       setHistoryPage(page);
       if (historyScrollRef.current) historyScrollRef.current.scrollTop = 0;
     } catch (error) {
@@ -915,7 +917,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
             {character.opening_scene && <Bubble role="assistant" text={character.opening_scene} character={character} showThoughts={showThoughts} />}
             {visibleMessageStart === 0 && stored.length >= 100 && (
               <div className="pb-2 text-center">
-                <p className="mb-2 text-xs text-muted-foreground">A conversa possui mensagens anteriores às exibidas aqui.</p>
+                <p className="mb-2 text-xs text-muted-foreground">A tela carrega somente as mensagens mais recentes; consulte todas as páginas no histórico.</p>
                 <Button type="button" variant="outline" size="sm"
                   onClick={() => { setHistoryDialog(true); void loadHistoryPage(0); }}>
                   Consultar histórico completo
