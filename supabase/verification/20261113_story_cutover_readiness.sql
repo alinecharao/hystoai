@@ -77,7 +77,7 @@ BEGIN
     'select_story_response_version(uuid,uuid,uuid)',
     'commit_story_memory_checkpoint(uuid,uuid,text,text,text)',
     'clear_story_messages(uuid)',
-    'delete_story_message(uuid)'
+    'delete_story_message(uuid,uuid)'
   ] LOOP
     IF to_regprocedure('public.' || function_signature) IS NULL
       OR NOT has_function_privilege('authenticated','public.' || function_signature,'EXECUTE')
