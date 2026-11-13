@@ -56,6 +56,9 @@ create table public.assistant_regeneration_claims(
 -- Match the RLS-enabled legacy tables seen in the actual installation.
 -- The privileged story RPCs remain responsible for lease mutations.
 alter table public.story_memories enable row level security;
+create policy legacy_memory_owner_read on public.story_memories for select to authenticated
+ using (user_id=auth.uid());
+
 alter table public.chat_generation_claims enable row level security;
 alter table public.assistant_regeneration_claims enable row level security;
 alter table public.messages enable row level security;
@@ -72,6 +75,7 @@ create policy versions_owner on public.assistant_response_versions for select to
  using(user_id=auth.uid());
 grant usage on schema public,auth to authenticated;
 grant select on public.characters to authenticated;
+grant select on public.story_memories to authenticated;
 grant select,insert,update,delete on public.messages to authenticated;
 grant select,insert,update,delete on public.story_memory_notes to authenticated;
 grant select on public.assistant_response_versions to authenticated;
