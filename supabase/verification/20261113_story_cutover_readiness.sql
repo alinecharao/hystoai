@@ -8,24 +8,24 @@ SET LOCAL statement_timeout = '30s';
 
 DO $ready$
 DECLARE
-  table_name text;
+  v_table_name text;
   function_signature text;
   active_claims bigint;
 BEGIN
-  FOREACH table_name IN ARRAY ARRAY[
+  FOREACH v_table_name IN ARRAY ARRAY[
     'stories','story_memory_checkpoints','messages',
     'assistant_response_versions','story_memory_notes',
     'story_memories','chat_generation_claims',
     'assistant_regeneration_claims'
   ] LOOP
-    IF to_regclass('public.' || table_name) IS NULL THEN
-      RAISE EXCEPTION 'Cutover blocked: missing table %',table_name;
+    IF to_regclass('public.' || v_table_name) IS NULL THEN
+      RAISE EXCEPTION 'Cutover blocked: missing table %',v_table_name;
     END IF;
     IF NOT EXISTS (
       SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-       WHERE n.nspname='public' AND c.relname=table_name
+       WHERE n.nspname='public' AND c.relname=v_table_name
          AND c.relkind='r' AND c.relrowsecurity
-    ) THEN RAISE EXCEPTION 'Cutover blocked: RLS disabled for %',table_name; END IF;
+    ) THEN RAISE EXCEPTION 'Cutover blocked: RLS disabled for %',v_table_name; END IF;
   END LOOP;
 
   IF EXISTS (
