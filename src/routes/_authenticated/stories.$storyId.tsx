@@ -1171,7 +1171,7 @@ function ChatWindow({ character, story, stored }: { character: Character; story:
               }}
             >
               <PromptInputTextarea
-                autoFocus={false} // Avoid mobile Safari opening the keyboard during navigation.
+                autoFocus={false}
                 rows={1}
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
