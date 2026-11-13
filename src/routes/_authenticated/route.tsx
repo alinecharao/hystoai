@@ -1,7 +1,9 @@
 import { createFileRoute, Link, Outlet, redirect, useNavigate, useRouterState } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { LayoutDashboard, Users, UserRound, CircleUserRound } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { ChatRail, chatRailModeEnabled } from "@/components/chat-rail";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
@@ -17,7 +19,7 @@ function Layout() {
   const { user } = Route.useRouteContext();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const isChat = pathname.startsWith("/chat/");
+  const isChat = pathname.startsWith("/chat/") || pathname.startsWith("/stories/");
   const links = [
     { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { to: "/characters", label: "Personagens", icon: Users },
@@ -25,6 +27,15 @@ function Layout() {
     { to: "/profile", label: "Perfil", icon: CircleUserRound },
   ] as const;
   const { queryClient } = Route.useRouteContext();
+  const lastPath = useRef(pathname);
+  useEffect(() => {
+    if (pathname === lastPath.current) return;
+    lastPath.current = pathname;
+    void queryClient.invalidateQueries({
+      queryKey: [chatRailModeEnabled ? "chat-rail-stories" : "chat-rail-legacy", user.id],
+    });
+  }, [pathname, user.id, queryClient]);
+
   async function signOut() {
     await queryClient.cancelQueries();
     queryClient.clear();
@@ -51,8 +62,18 @@ function Layout() {
           </Link>
         ))}
       </nav>
-      <div className="min-h-0 flex-1">
-        <Outlet />
+      <div className="flex min-h-0 flex-1">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="shrink-0 px-2 pb-1 pt-1.5 md:hidden">
+            <ChatRail userId={user.id} horizontal />
+          </div>
+          <div className="min-h-0 flex-1">
+            <Outlet />
+          </div>
+        </div>
+        <aside className="hidden min-h-0 shrink-0 py-2 pl-1 pr-2 md:block" aria-label="Navegação global de conversas">
+          <ChatRail userId={user.id} />
+        </aside>
       </div>
     </div>
   );
