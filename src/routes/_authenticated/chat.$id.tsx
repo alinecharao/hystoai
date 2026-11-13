@@ -450,7 +450,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
       }
       // Regeneration SDK replies have temporary IDs. Always use the real
       // database rows instead of reapplying a stale render-time initial array.
-      if (restorePersistedState) setMessages(toPersistedChatMessages(fresh));
+      if (restorePersistedState || failedTurn) setMessages(toPersistedChatMessages(fresh));
     } catch (syncError) {
       console.warn("hysto_chat_reconciliation_failed", syncError);
       // Never guess an ID or clear a conversation after a failed refresh.
@@ -489,6 +489,9 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
         // Only an unsaved client turn is restored as draft. A saved turn must
         // remain pending for recovery, never resent as a duplicate.
         setInput((current) => draftAfterFailedSubmission(saved, clientMessageId, text, current));
+        // A failed request must not leave an optimistic, unsaved SDK turn
+        // visible after the authoritative database snapshot is available.
+        setMessages(toPersistedChatMessages(saved));
       } catch (syncError) {
         console.warn("chat_send_verify_failed", syncError);
         // Unknown persistence status: do not prompt a potentially duplicate send.
