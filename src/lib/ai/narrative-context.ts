@@ -31,7 +31,11 @@ export function selectGroqNarrativeMessages<T extends NarrativeProviderMessage>(
   compactSystem: string,
   budgetCharacters: number = GROQ_NARRATIVE_CHAR_BUDGET,
 ): Array<T | { role: "system"; content: string }> | null {
-  const conversation = messages.filter((message) => message.role !== "system");
+  // Some OpenAI-compatible SDKs encode the server instruction as developer
+  // rather than system. Either is owned by the server, not a story turn.
+  const conversation = messages.filter((message) =>
+    message.role !== "system" && message.role !== "developer",
+  );
   const latest = conversation.at(-1);
   if (!latest || latest.role !== "user" || !compactSystem.trim()) return null;
   if (!Number.isFinite(budgetCharacters) || budgetCharacters <= 0) return null;
