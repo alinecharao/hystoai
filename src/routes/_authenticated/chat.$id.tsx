@@ -23,7 +23,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { activeChatTurnIds } from "@/lib/chat-validation";
 import { readDraft, saveDraft } from "@/lib/chat-drafts";
 import { readStoryExport, saveStoryExportFile } from "@/lib/story-export";
-import { hasPersistedUserTurn, latestPendingUserTurn, toPersistedChatMessages } from "@/lib/chat-reconciliation";
+import { draftAfterFailedSubmission, latestPendingUserTurn, toPersistedChatMessages } from "@/lib/chat-reconciliation";
 import type { MemoryMessageSelection } from "@/components/curated-memory-panel";
 import {
   CHARACTER_KNOWLEDGE_LABELS, DEFAULT_CHARACTER_KNOWLEDGE_MODE,
@@ -445,8 +445,8 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
         qc.fetchQuery(messagesQuery(character.id)),
         qc.invalidateQueries({ queryKey: ["response-versions", character.id] }),
       ]);
-      if (failedTurn && !hasPersistedUserTurn(fresh, failedTurn.id)) {
-        setInput((current) => current.trim() ? current : failedTurn.text);
+      if (failedTurn) {
+        setInput((current) => draftAfterFailedSubmission(fresh, failedTurn.id, failedTurn.text, current));
       }
       // Regeneration SDK replies have temporary IDs. Always use the real
       // database rows instead of reapplying a stale render-time initial array.
@@ -488,9 +488,7 @@ function ChatWindow({ character, stored }: { character: Character; stored: { id:
         const saved = await qc.fetchQuery(messagesQuery(character.id));
         // Only an unsaved client turn is restored as draft. A saved turn must
         // remain pending for recovery, never resent as a duplicate.
-        if (!hasPersistedUserTurn(saved, clientMessageId)) {
-          setInput((current) => current.trim() ? current : text);
-        }
+        setInput((current) => draftAfterFailedSubmission(saved, clientMessageId, text, current));
       } catch (syncError) {
         console.warn("chat_send_verify_failed", syncError);
         // Unknown persistence status: do not prompt a potentially duplicate send.
